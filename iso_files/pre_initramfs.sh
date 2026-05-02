@@ -17,10 +17,16 @@ if [[ -d /usr/lib/sysimage/rpm ]] && [[ "$(ls -A /usr/lib/sysimage/rpm 2>/dev/nu
           /usr/lib/sysimage/rpm/Packages.db-wal \
           /usr/lib/sysimage/rpm/Packages.db-shm
     ln -sf /usr/lib/sysimage/rpm /var/lib/rpm
-    # rpm --rebuilddb cannot atomically rename in this overlay fs; it instead
-    # writes the rebuilt DB to a sibling rpmrebuilddb.* temp dir. Copy it back
+    # rpm --rebuilddb cannot atomically rename in this overlay fs; it writes
+    # the rebuilt DB to a sibling rpmrebuilddb.* temp dir instead. Copy it back
     # manually — same pattern used in the image build scripts.
-    rpm --rebuilddb 2>/dev/null || true
+    # If rebuilddb fails (main db is genuinely corrupt), discard it and start
+    # fresh; a valid empty database is better than a malformed one.
+    if ! rpm --rebuilddb 2>/dev/null; then
+        rm -f /usr/lib/sysimage/rpm/rpmdb.sqlite \
+              /usr/lib/sysimage/rpm/Packages.db
+        rpm --rebuilddb
+    fi
     REBUILD_DIR=$(ls -d /usr/lib/sysimage/rpmrebuilddb.* 2>/dev/null | sort -t. -k2 -n | tail -1) || true
     if [[ -n "${REBUILD_DIR}" ]]; then
         cp -f "${REBUILD_DIR}/rpmdb.sqlite" /usr/lib/sysimage/rpm/rpmdb.sqlite
