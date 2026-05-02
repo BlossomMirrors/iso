@@ -46,3 +46,25 @@ if [[ -d /usr/lib/sysimage/rpm ]] && [[ "$(ls -A /usr/lib/sysimage/rpm 2>/dev/nu
     rm -f /usr/lib/sysimage/rpm/rpmdb.sqlite-wal \
           /usr/lib/sysimage/rpm/rpmdb.sqlite-shm
 fi
+
+# When building fc43 packages on an fc44 host, two scriptlet failures occur:
+# 1. The host's restorecon requires LIBSELINUX_3.10 which fc43 doesn't provide.
+# 2. The fc43 filesystem %posttrans Lua script uses an rpm.glob() return value
+#    that fc44's RPM Lua API changed from a table to a string, breaking ipairs().
+# Skip scriptlets during the initramfs package install to avoid both issues.
+# (Scriptlets are not needed for dracut/initramfs-only package chroots.)
+if [[ -f /etc/dnf/dnf.conf ]]; then
+    if ! grep -q '^tsflags' /etc/dnf/dnf.conf; then
+        echo 'tsflags=noscripts' >> /etc/dnf/dnf.conf
+    fi
+else
+    mkdir -p /etc/dnf
+    printf '[main]\ntsflags=noscripts\n' > /etc/dnf/dnf.conf
+fi
+
+# Belt-and-suspenders: if restorecon is still broken (wrong libselinux version),
+# replace it with a no-op so any remaining scriptlets don't fail on it.
+if [[ -f /usr/sbin/restorecon ]] && ! /usr/sbin/restorecon --version > /dev/null 2>&1; then
+    printf '#!/bin/bash\nexit 0\n' > /usr/sbin/restorecon
+    chmod 755 /usr/sbin/restorecon
+fi
