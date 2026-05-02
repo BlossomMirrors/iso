@@ -35,6 +35,15 @@ SPECS=(
     "anaconda-webui"
 )
 
+# Ensure $releasever resolves for DNF — bootc images may lack /etc/dnf/vars/releasever.
+if [[ ! -s /etc/dnf/vars/releasever ]] && [[ -f /etc/os-release ]]; then
+    source /etc/os-release
+    if [[ -n "${VERSION_ID:-}" ]]; then
+        mkdir -p /etc/dnf/vars
+        echo "$VERSION_ID" > /etc/dnf/vars/releasever
+    fi
+fi
+
 dnf install -y "${SPECS[@]}"
 
 # Anaconda Profile for BlossomOS

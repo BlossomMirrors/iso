@@ -5,6 +5,17 @@ set -xeuo pipefail
 # /var/lib/rpm is empty after podman export because /var is not populated
 # at image build time. Without this symlink, dnf fails with "rpmtsOpenDB failed".
 
+# Ensure $releasever resolves for DNF. On bootc images /etc/dnf/vars/releasever
+# may be absent, and a freshly rebuilt RPMDB can't provide it via fedora-release.
+if [[ ! -s /etc/dnf/vars/releasever ]] && [[ -f /etc/os-release ]]; then
+    # shellcheck source=/dev/null
+    source /etc/os-release
+    if [[ -n "${VERSION_ID:-}" ]]; then
+        mkdir -p /etc/dnf/vars
+        echo "$VERSION_ID" > /etc/dnf/vars/releasever
+    fi
+fi
+
 rm -rf /var/lib/rpm
 mkdir -p /var/lib
 
