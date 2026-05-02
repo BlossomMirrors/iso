@@ -1,0 +1,52 @@
+---
+when:
+  - event: push
+    branch: main
+  - event: cron
+    cron: weekly-build
+  - event: manual
+
+variables:
+  - &ftp_env
+    FTP_PASSWORD:
+      from_secret: ftp_password
+  - &ghcr_env
+    GITHUB_TOKEN:
+      from_secret: github_token
+    GITHUB_USERNAME:
+      from_secret: github_username
+
+steps:
+  - name: build-iso-main
+    image: ghcr.io/ublue-os/devcontainer:latest
+    privileged: true
+    environment:
+      <<: *ghcr_env
+    commands:
+      - echo "$GITHUB_TOKEN" | podman login ghcr.io -u "$GITHUB_USERNAME" --password-stdin
+      - just build-iso blossomos latest main
+
+  - name: upload-iso-main
+    image: ghcr.io/ublue-os/devcontainer:latest
+    environment:
+      <<: *ftp_env
+    commands:
+      - just upload-ftp main
+    depends_on: [build-iso-main]
+
+  - name: build-iso-nvidia-open
+    image: ghcr.io/ublue-os/devcontainer:latest
+    privileged: true
+    environment:
+      <<: *ghcr_env
+    commands:
+      - echo "$GITHUB_TOKEN" | podman login ghcr.io -u "$GITHUB_USERNAME" --password-stdin
+      - just build-iso blossomos latest nvidia-open
+
+  - name: upload-iso-nvidia-open
+    image: ghcr.io/ublue-os/devcontainer:latest
+    environment:
+      <<: *ftp_env
+    commands:
+      - just upload-ftp nvidia-open
+    depends_on: [build-iso-nvidia-open]
