@@ -40,6 +40,7 @@ cp -a "${TMP_RPMDB}/." "${RPM_TARGET}/"
 umount "${TMP_RPMDB}"
 rmdir "${TMP_RPMDB}"
 
+mkdir -p /var/lib
 ln -sfn "${RPM_TARGET}" /var/lib/rpm
 
 if [[ -d /etc/ssl/certs ]] && [[ ! -L /etc/ssl/certs ]]; then
