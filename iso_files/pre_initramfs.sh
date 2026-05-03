@@ -9,36 +9,31 @@ fi
 
 RPM_TARGET=/usr/lib/sysimage/rpm
 
-# SQLite WAL mode requires POSIX advisory locking (fcntl F_SETLK). Rootless
-# Podman uses fuse-overlayfs, which does not implement these locks reliably for
-# newly created files. Initializing or rebuilding on a real tmpfs guarantees
-# correct locking semantics; the clean result is then copied to the overlayfs
-# target. This also fixes the cross-directory rename failure (EXDEV) that makes
-# rpm --rebuilddb exit non-zero when run directly on overlayfs.
-TMP_RPMDB=$(mktemp -d)
-mount -t tmpfs -o size=256m tmpfs "${TMP_RPMDB}"
-
+# Stash the clean DB before mounting over the directory.
+# Copy only the main file; the WAL written by the post_rootfs DNF session ran
+# on fuse-overlayfs and contains torn writes that make SQLite report corruption.
+SAVED_DB=""
 if [[ -f "${RPM_TARGET}/rpmdb.sqlite" ]]; then
-    # Copy only the main DB file, not WAL/SHM: the WAL was written by the
-    # post_rootfs DNF install on fuse-overlayfs and contains torn writes.
-    # Omitting it lets SQLite open the last clean checkpointed state.
-    cp "${RPM_TARGET}/rpmdb.sqlite" "${TMP_RPMDB}/"
-    rpm --dbpath "${TMP_RPMDB}" --rebuilddb 2>/dev/null || {
-        # Main DB is also unreadable; fall back to an empty database.
-        rm -f "${TMP_RPMDB}/rpmdb.sqlite"
-        rpm --dbpath "${TMP_RPMDB}" --initdb
-    }
-else
-    rpm --dbpath "${TMP_RPMDB}" --initdb
+    SAVED_DB=$(mktemp)
+    cp "${RPM_TARGET}/rpmdb.sqlite" "${SAVED_DB}"
 fi
 
-rm -f "${TMP_RPMDB}/rpmdb.sqlite-wal" "${TMP_RPMDB}/rpmdb.sqlite-shm"
-
-rm -rf "${RPM_TARGET}"
+# Mount a real tmpfs over the RPM DB path and leave it mounted.
+# fuse-overlayfs (rootless Podman in CI) does not implement POSIX advisory
+# locking (fcntl F_SETLK) for SQLite WAL mode. Every RPM/DNF write that
+# happens in this build step — including the initramfs recipe that runs after
+# this hook — needs a filesystem where SQLite locking works. The tmpfs stays
+# mounted for the lifetime of the build container; the squashfs tool reads
+# through it so the DB is included in the final ISO.
 mkdir -p "${RPM_TARGET}"
-cp -a "${TMP_RPMDB}/." "${RPM_TARGET}/"
-umount "${TMP_RPMDB}"
-rmdir "${TMP_RPMDB}"
+mount -t tmpfs -o size=256m tmpfs "${RPM_TARGET}"
+
+if [[ -n "${SAVED_DB}" ]]; then
+    cp "${SAVED_DB}" "${RPM_TARGET}/rpmdb.sqlite"
+    rm -f "${SAVED_DB}"
+else
+    rpm --dbpath "${RPM_TARGET}" --initdb
+fi
 
 mkdir -p /var/lib
 ln -sfn "${RPM_TARGET}" /var/lib/rpm
