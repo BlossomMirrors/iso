@@ -19,8 +19,15 @@ TMP_RPMDB=$(mktemp -d)
 mount -t tmpfs -o size=256m tmpfs "${TMP_RPMDB}"
 
 if [[ -f "${RPM_TARGET}/rpmdb.sqlite" ]]; then
-    cp -a "${RPM_TARGET}/." "${TMP_RPMDB}/"
-    rpm --dbpath "${TMP_RPMDB}" --rebuilddb
+    # Copy only the main DB file, not WAL/SHM: the WAL was written by the
+    # post_rootfs DNF install on fuse-overlayfs and contains torn writes.
+    # Omitting it lets SQLite open the last clean checkpointed state.
+    cp "${RPM_TARGET}/rpmdb.sqlite" "${TMP_RPMDB}/"
+    rpm --dbpath "${TMP_RPMDB}" --rebuilddb 2>/dev/null || {
+        # Main DB is also unreadable; fall back to an empty database.
+        rm -f "${TMP_RPMDB}/rpmdb.sqlite"
+        rpm --dbpath "${TMP_RPMDB}" --initdb
+    }
 else
     rpm --dbpath "${TMP_RPMDB}" --initdb
 fi
