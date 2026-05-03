@@ -7,15 +7,33 @@ if [[ ! -s /etc/dnf/vars/releasever ]] && [[ -f /etc/os-release ]]; then
     echo "${VERSION_ID:-}" > /etc/dnf/vars/releasever
 fi
 
-# DON'T try to repair export-broken DB, just reset it cleanly
-if [[ -d /usr/lib/sysimage/rpm ]]; then
-    rm -rf /usr/lib/sysimage/rpm
+RPM_TARGET=/usr/lib/sysimage/rpm
+
+# SQLite WAL mode requires POSIX advisory locking (fcntl F_SETLK). Rootless
+# Podman uses fuse-overlayfs, which does not implement these locks reliably for
+# newly created files. Initializing or rebuilding on a real tmpfs guarantees
+# correct locking semantics; the clean result is then copied to the overlayfs
+# target. This also fixes the cross-directory rename failure (EXDEV) that makes
+# rpm --rebuilddb exit non-zero when run directly on overlayfs.
+TMP_RPMDB=$(mktemp -d)
+mount -t tmpfs -o size=256m tmpfs "${TMP_RPMDB}"
+
+if [[ -f "${RPM_TARGET}/rpmdb.sqlite" ]]; then
+    cp -a "${RPM_TARGET}/." "${TMP_RPMDB}/"
+    rpm --dbpath "${TMP_RPMDB}" --rebuilddb
+else
+    rpm --dbpath "${TMP_RPMDB}" --initdb
 fi
 
-mkdir -p /usr/lib/sysimage/rpm
-rpm --initdb
+rm -f "${TMP_RPMDB}/rpmdb.sqlite-wal" "${TMP_RPMDB}/rpmdb.sqlite-shm"
 
-ln -sfn /usr/lib/sysimage/rpm /var/lib/rpm
+rm -rf "${RPM_TARGET}"
+mkdir -p "${RPM_TARGET}"
+cp -a "${TMP_RPMDB}/." "${RPM_TARGET}/"
+umount "${TMP_RPMDB}"
+rmdir "${TMP_RPMDB}"
+
+ln -sfn "${RPM_TARGET}" /var/lib/rpm
 
 if [[ -d /etc/ssl/certs ]] && [[ ! -L /etc/ssl/certs ]]; then
     rm -rf /etc/ssl/certs
@@ -31,18 +49,4 @@ if [[ -f /usr/sbin/restorecon ]] && ! /usr/sbin/restorecon --version >/dev/null 
     mv /usr/sbin/restorecon /usr/sbin/restorecon.bak || true
     printf '#!/bin/bash\nexit 0\n' > /usr/sbin/restorecon
     chmod +x /usr/sbin/restorecon
-fi
-
-rm -f /usr/share/rpm/rpmdb.sqlite-wal /usr/share/rpm/rpmdb.sqlite-shm
-
-rpm --rebuilddb || true
-
-REBUILD_DIR=$(ls -d /usr/share/rpmrebuilddb.* 2>/dev/null | sort -t. -k2 -n | tail -1 || true)
-
-if [[ -f "${REBUILD_DIR}/rpmdb.sqlite" ]]; then
-    # sanity check before overwrite
-    sqlite3 "${REBUILD_DIR}/rpmdb.sqlite" "PRAGMA integrity_check;" | grep -q ok
-
-    cp -f "${REBUILD_DIR}/rpmdb.sqlite" /usr/share/rpm/rpmdb.sqlite
-    rm -rf "${REBUILD_DIR}"
 fi
