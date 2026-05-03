@@ -30,14 +30,11 @@ if [[ -d /usr/lib/sysimage/rpm ]] && [[ "$(ls -A /usr/lib/sysimage/rpm 2>/dev/nu
     ln -sf /usr/lib/sysimage/rpm /var/lib/rpm
     # rpm --rebuilddb cannot atomically rename in this overlay fs; it writes
     # the rebuilt DB to a sibling rpmrebuilddb.* temp dir instead. Copy it back
-    # manually — same pattern used in the image build scripts.
-    # If rebuilddb fails (main db is genuinely corrupt), discard it and start
-    # fresh; a valid empty database is better than a malformed one.
-    if ! rpm --rebuilddb 2>/dev/null; then
-        rm -f /usr/lib/sysimage/rpm/rpmdb.sqlite \
-              /usr/lib/sysimage/rpm/Packages.db
-        rpm --rebuilddb
-    fi
+    # manually. If rebuilddb exits non-zero (e.g. overlay rename failure), the
+    # rpmrebuilddb.* dir may still exist with a valid DB — copy it if present.
+    # Never clear the original DB: doing so loses package registrations (e.g.
+    # kernel-core) that Titanoboa queries after the initramfs packages install.
+    rpm --rebuilddb 2>/dev/null || true
     REBUILD_DIR=$(ls -d /usr/lib/sysimage/rpmrebuilddb.* 2>/dev/null | sort -t. -k2 -n | tail -1) || true
     if [[ -n "${REBUILD_DIR}" ]]; then
         cp -f "${REBUILD_DIR}/rpmdb.sqlite" /usr/lib/sysimage/rpm/rpmdb.sqlite
