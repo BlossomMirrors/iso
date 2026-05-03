@@ -32,3 +32,17 @@ if [[ -f /usr/sbin/restorecon ]] && ! /usr/sbin/restorecon --version >/dev/null 
     printf '#!/bin/bash\nexit 0\n' > /usr/sbin/restorecon
     chmod +x /usr/sbin/restorecon
 fi
+
+rm -f /usr/share/rpm/rpmdb.sqlite-wal /usr/share/rpm/rpmdb.sqlite-shm
+
+rpm --rebuilddb || true
+
+REBUILD_DIR=$(ls -d /usr/share/rpmrebuilddb.* 2>/dev/null | sort -t. -k2 -n | tail -1 || true)
+
+if [[ -f "${REBUILD_DIR}/rpmdb.sqlite" ]]; then
+    # sanity check before overwrite
+    sqlite3 "${REBUILD_DIR}/rpmdb.sqlite" "PRAGMA integrity_check;" | grep -q ok
+
+    cp -f "${REBUILD_DIR}/rpmdb.sqlite" /usr/share/rpm/rpmdb.sqlite
+    rm -rf "${REBUILD_DIR}"
+fi
