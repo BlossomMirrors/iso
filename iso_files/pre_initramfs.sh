@@ -8,32 +8,34 @@ if [[ ! -s /etc/dnf/vars/releasever ]] && [[ -f /etc/os-release ]]; then
 fi
 
 RPM_TARGET=/usr/lib/sysimage/rpm
-
-# Stash the clean DB before mounting over the directory.
-# Copy only the main file; the WAL written by the post_rootfs DNF session ran
-# on fuse-overlayfs and contains torn writes that make SQLite report corruption.
-SAVED_DB=""
-if [[ -f "${RPM_TARGET}/rpmdb.sqlite" ]]; then
-    SAVED_DB=$(mktemp)
-    cp "${RPM_TARGET}/rpmdb.sqlite" "${SAVED_DB}"
-fi
-
-# Mount a real tmpfs over the RPM DB path and leave it mounted.
-# fuse-overlayfs (rootless Podman in CI) does not implement POSIX advisory
-# locking (fcntl F_SETLK) for SQLite WAL mode. Every RPM/DNF write that
-# happens in this build step — including the initramfs recipe that runs after
-# this hook — needs a filesystem where SQLite locking works. The tmpfs stays
-# mounted for the lifetime of the build container; the squashfs tool reads
-# through it so the DB is included in the final ISO.
 mkdir -p "${RPM_TARGET}"
-mount -t tmpfs -o size=256m tmpfs "${RPM_TARGET}"
 
-if [[ -n "${SAVED_DB}" ]]; then
-    cp "${SAVED_DB}" "${RPM_TARGET}/rpmdb.sqlite"
-    rm -f "${SAVED_DB}"
+# The pre_initramfs hook and the initramfs step run in separate Podman
+# containers. A tmpfs mount in this container is invisible to the next one;
+# only overlayfs writes persist across the container boundary.
+#
+# Strategy: do all SQLite work on a tmpfs (where WAL locking works), then
+# copy just the main DB file back to the overlayfs. The file on overlayfs is
+# already in WAL mode per its header, so the initramfs container's RPM/DNF
+# hits PRAGMA journal_mode=WAL as a no-op — no exclusive lock is acquired on
+# a new file, which is the specific operation fuse-overlayfs fails at.
+TMP_RPMDB=$(mktemp -d)
+mount -t tmpfs -o size=256m tmpfs "${TMP_RPMDB}"
+
+if [[ -f "${RPM_TARGET}/rpmdb.sqlite" ]]; then
+    cp "${RPM_TARGET}/rpmdb.sqlite" "${TMP_RPMDB}/"
+    rpm --dbpath "${TMP_RPMDB}" -qa >/dev/null 2>&1 || {
+        rm -f "${TMP_RPMDB}/rpmdb.sqlite"
+        rpm --dbpath "${TMP_RPMDB}" --initdb
+    }
 else
-    rpm --dbpath "${RPM_TARGET}" --initdb
+    rpm --dbpath "${TMP_RPMDB}" --initdb
 fi
+
+cp "${TMP_RPMDB}/rpmdb.sqlite" "${RPM_TARGET}/rpmdb.sqlite"
+rm -f "${RPM_TARGET}/rpmdb.sqlite-wal" "${RPM_TARGET}/rpmdb.sqlite-shm"
+umount "${TMP_RPMDB}"
+rmdir "${TMP_RPMDB}"
 
 mkdir -p /var/lib
 ln -sfn "${RPM_TARGET}" /var/lib/rpm
