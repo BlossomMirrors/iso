@@ -47,6 +47,15 @@ if [[ -d /usr/lib/sysimage/rpm ]] && [[ "$(ls -A /usr/lib/sysimage/rpm 2>/dev/nu
           /usr/lib/sysimage/rpm/rpmdb.sqlite-shm
 fi
 
+# The blossomos image ships /etc/ssl/certs as a real directory, but the fc43
+# ca-certificates package installs it as a symlink to /etc/pki/tls/certs.
+# RPM cannot replace a directory with a symlink, causing the transaction to fail.
+# configure_iso_anaconda.sh has already run its curl calls, so it is safe to
+# remove the directory here; ca-certificates will recreate the correct symlink.
+if [[ -d /etc/ssl/certs ]] && [[ ! -L /etc/ssl/certs ]]; then
+    rm -rf /etc/ssl/certs
+fi
+
 # When building fc43 packages on an fc44 host, two scriptlet failures occur:
 # 1. The host's restorecon requires LIBSELINUX_3.10 which fc43 doesn't provide.
 # 2. The fc43 filesystem %posttrans Lua script uses an rpm.glob() return value
