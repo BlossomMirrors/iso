@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 set -xeuo pipefail
 
-if [[ ! -s /etc/dnf/vars/releasever ]] && [[ -f /etc/os-release ]]; then
+if [[ -f /etc/os-release ]]; then
     source /etc/os-release
-    mkdir -p /etc/dnf/vars
-    echo "${VERSION_ID:-}" > /etc/dnf/vars/releasever
+    if [[ -n "${VERSION_ID:-}" ]]; then
+        mkdir -p /etc/dnf/vars
+        echo "$VERSION_ID" > /etc/dnf/vars/releasever
+    fi
 fi
 
 RPM_TARGET=/usr/lib/sysimage/rpm

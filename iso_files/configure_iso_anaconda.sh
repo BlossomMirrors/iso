@@ -35,8 +35,8 @@ SPECS=(
     "anaconda-webui"
 )
 
-# Ensure $releasever resolves for DNF — bootc images may lack /etc/dnf/vars/releasever.
-if [[ ! -s /etc/dnf/vars/releasever ]] && [[ -f /etc/os-release ]]; then
+# Always sync releasever with os-release — the image may ship a stale value after a rebase.
+if [[ -f /etc/os-release ]]; then
     source /etc/os-release
     if [[ -n "${VERSION_ID:-}" ]]; then
         mkdir -p /etc/dnf/vars
