@@ -49,7 +49,8 @@ cat > /etc/dnf/dnf.conf <<EOF
 [main]
 keepcache=0
 # Skip scriptlets that may fail due to library version mismatches during build
-tsflags=nodocs
+# noscripts skips %posttrans and other scriptlets (e.g., filesystem package Lua bug)
+tsflags=nodocs,noscripts
 EOF
 
 # Create restorecon stub BEFORE any package installation to prevent
