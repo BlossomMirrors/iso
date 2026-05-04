@@ -125,6 +125,9 @@ build-iso image="blossomos" tag="latest" flavor="main":
     trap "${SUDOIF} rm -rf '${TITANOBOA_DIR}'" EXIT
     git clone --depth=1 https://github.com/ublue-os/titanoboa.git "${TITANOBOA_DIR}"
 
+    # Patch titanoboa to detect the installed kernel from /lib/modules instead of hardcoding 'kernel-core'
+    sed -i 's/rpm -q kernel-core --queryformat "%{evr}.%{arch}"/ls -1 \/lib\/modules/g' "${TITANOBOA_DIR}/Justfile"
+
     cd "${TITANOBOA_DIR}"
     ${SUDOIF} env \
         PATH="${PATH}" \
