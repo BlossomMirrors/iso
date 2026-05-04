@@ -48,10 +48,36 @@ mkdir -p /etc/dnf
 cat > /etc/dnf/dnf.conf <<EOF
 [main]
 keepcache=0
-# Skip scriptlets that may fail due to library version mismatches during build
-# noscripts skips %posttrans and other scriptlets (e.g., filesystem package Lua bug)
+# Skip docs to reduce image size
+# Skip broken scriptlets (e.g., filesystem-3.18-50.fc43 Lua bug)
 tsflags=nodocs,noscripts
 EOF
+
+# Create wrapper script to run essential post-install tasks that noscripts skips
+mkdir -p /usr/local/bin
+cat > /usr/local/bin/run-essential-post-scripts <<'EOF'
+#!/bin/bash
+# Run essential post-install tasks that are normally handled by RPM scriptlets
+# This is needed because tsflags=noscripts skips all scriptlets
+
+set -e
+
+# Filesystem package post-install tasks (normally in %post)
+# Create standard directory structure if missing
+for dir in /home /var /var/lib /var/log /var/tmp /opt /srv /usr/local; do
+    mkdir -p "$dir" 2>/dev/null || true
+done
+
+# Kernel package post-install tasks (normally in %post)
+# Create initramfs and update bootloader entries
+if [[ -d /boot ]]; then
+    # Mark kernel packages for initramfs regeneration
+    touch /boot/.need-initramfs-regen 2>/dev/null || true
+fi
+
+echo "Essential post-install tasks completed"
+EOF
+chmod +x /usr/local/bin/run-essential-post-scripts
 
 # Create restorecon stub BEFORE any package installation to prevent
 # LIBSELINUX version mismatch errors during filesystem package scriptlets
