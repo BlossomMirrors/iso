@@ -54,6 +54,10 @@ tsflags=nodocs,noscripts
 EOF
 
 # Create wrapper script to run essential post-install tasks that noscripts skips
+# Handle case where /usr/local exists as a file instead of a directory
+if [[ -f /usr/local ]]; then
+    rm -f /usr/local
+fi
 mkdir -p /usr/local/bin
 cat > /usr/local/bin/run-essential-post-scripts <<'EOF'
 #!/bin/bash
