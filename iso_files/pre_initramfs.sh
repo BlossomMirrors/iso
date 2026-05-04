@@ -56,7 +56,8 @@ EOF
 # Create wrapper script to run essential post-install tasks that noscripts skips
 # Handle case where /usr/local exists but is not a directory
 # This can happen in some container base images as a placeholder file
-if [[ -e /usr/local ]] && [[ ! -d /usr/local ]]; then
+# Use stat instead of -e test for more reliable detection in overlayfs/container environments
+if stat /usr/local >/dev/null 2>&1 && [[ ! -d /usr/local ]]; then
     echo "WARNING: /usr/local exists but is not a directory (type: $(stat -c %F /usr/local 2>/dev/null || echo 'unknown'))"
     if [[ -f /usr/local ]]; then
         if [[ -s /usr/local ]]; then
