@@ -134,7 +134,7 @@ build-iso image="blossomos" tag="latest" flavor="main":
         CI="${CI:-}" \
         HOOK_post_rootfs="${HOOK_SCRIPT}" \
         HOOK_pre_initramfs="${HOOK_PRE_INITRAMFS}" \
-        just builder_image="quay.io/fedora/fedora:43" build \
+        just build \
         "git.blossomos.org/blossom/image:${image_tag}" \
         "1" \
         "${FLATPAK_LIST}" \
