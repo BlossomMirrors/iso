@@ -24,7 +24,8 @@ mount -t tmpfs -o size=256m tmpfs "${TMP_RPMDB}"
 
 if [[ -f "${RPM_TARGET}/rpmdb.sqlite" ]]; then
     cp "${RPM_TARGET}/rpmdb.sqlite"* "${TMP_RPMDB}/"
-    rpm --dbpath "${TMP_RPMDB}" -qa >/dev/null 2>&1 || {
+    rpm --dbpath "${TMP_RPMDB}" -qa >/tmp/rpm_qa_error.log 2>&1 || {
+        cat /tmp/rpm_qa_error.log
         rm -f "${TMP_RPMDB}/rpmdb.sqlite"*
         rpm --dbpath "${TMP_RPMDB}" --initdb
     }
@@ -32,8 +33,7 @@ else
     rpm --dbpath "${TMP_RPMDB}" --initdb
 fi
 
-cp "${TMP_RPMDB}/rpmdb.sqlite" "${RPM_TARGET}/rpmdb.sqlite"
-rm -f "${RPM_TARGET}/rpmdb.sqlite-wal" "${RPM_TARGET}/rpmdb.sqlite-shm"
+cp "${TMP_RPMDB}/rpmdb.sqlite"* "${RPM_TARGET}/"
 umount "${TMP_RPMDB}"
 rmdir "${TMP_RPMDB}"
 
