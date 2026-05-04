@@ -54,9 +54,25 @@ tsflags=nodocs,noscripts
 EOF
 
 # Create wrapper script to run essential post-install tasks that noscripts skips
-# Handle case where /usr/local exists as a file instead of a directory
-if [[ -f /usr/local ]]; then
-    rm -f /usr/local
+# Handle case where /usr/local exists but is not a directory
+# This can happen in some container base images as a placeholder file
+if [[ -e /usr/local ]] && [[ ! -d /usr/local ]]; then
+    echo "WARNING: /usr/local exists but is not a directory (type: $(stat -c %F /usr/local 2>/dev/null || echo 'unknown'))"
+    if [[ -f /usr/local ]]; then
+        if [[ -s /usr/local ]]; then
+            # Non-empty file - back it up before removing
+            echo "WARNING: /usr/local is a non-empty file, backing up to /usr/local.bak"
+            cp /usr/local /usr/local.bak
+        else
+            # Empty file - safe to remove, but still back up for debugging
+            echo "WARNING: /usr/local is an empty placeholder file, backing up and removing"
+            cp /usr/local /usr/local.bak
+        fi
+        rm -f /usr/local
+    else
+        echo "ERROR: /usr/local exists as an unexpected type, cannot proceed safely"
+        exit 1
+    fi
 fi
 mkdir -p /usr/local/bin
 cat > /usr/local/bin/run-essential-post-scripts <<'EOF'
