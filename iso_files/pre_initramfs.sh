@@ -55,11 +55,20 @@ EOF
 
 # Create wrapper script to run essential post-install tasks that noscripts skips
 # Handle case where /usr/local exists but is not a directory
-# This can happen in some container base images as a placeholder file
+# This can happen in some container base images as a placeholder file or symlink
 # Use stat instead of -e test for more reliable detection in overlayfs/container environments
 if stat /usr/local >/dev/null 2>&1 && [[ ! -d /usr/local ]]; then
-    echo "WARNING: /usr/local exists but is not a directory (type: $(stat -c %F /usr/local 2>/dev/null || echo 'unknown'))"
-    if [[ -f /usr/local ]]; then
+    file_type=$(stat -c %F /usr/local 2>/dev/null || echo "unknown")
+    echo "WARNING: /usr/local exists but is not a directory (type: ${file_type})"
+    if [[ -L /usr/local ]]; then
+        # It's a symbolic link - check where it points
+        link_target=$(readlink /usr/local)
+        echo "WARNING: /usr/local is a symlink pointing to: ${link_target}"
+        # Back up the symlink info before removing
+        echo "${link_target}" > /usr/local.symlink.bak
+        rm -f /usr/local
+        echo "WARNING: Removed symlink, will create /usr/local as directory"
+    elif [[ -f /usr/local ]]; then
         if [[ -s /usr/local ]]; then
             # Non-empty file - back it up before removing
             echo "WARNING: /usr/local is a non-empty file, backing up to /usr/local.bak"
@@ -71,7 +80,7 @@ if stat /usr/local >/dev/null 2>&1 && [[ ! -d /usr/local ]]; then
         fi
         rm -f /usr/local
     else
-        echo "ERROR: /usr/local exists as an unexpected type, cannot proceed safely"
+        echo "ERROR: /usr/local exists as an unexpected type (${file_type}), cannot proceed safely"
         exit 1
     fi
 fi
