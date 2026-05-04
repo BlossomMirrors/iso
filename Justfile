@@ -131,34 +131,7 @@ build-iso image="blossomos" tag="latest" flavor="main":
     # Patch rootfs-include-container to pull the image on the host rather than inside the
     # nested rootfs container — running podman inside podman --rootfs causes glibc symbol
     # version mismatches when the devcontainer and rootfs are on different Fedora releases.
-    python3 - "${TITANOBOA_DIR}/Justfile" <<'PYEOF'
-import sys
-
-with open(sys.argv[1]) as f:
-    content = f.read()
-
-old = (
-    "    CMD='set -xeuo pipefail\n"
-    "    mkdir -p /var/lib/containers/storage\n"
-    "    podman pull {{ container_image || image }}\n"
-    "    dnf install -y fuse-overlayfs'\n"
-    "    chroot \"$CMD\""
-)
-new = (
-    "    mkdir -p {{ rootfs }}/var/lib/containers/storage\n"
-    "    {{ PODMAN }} pull --root {{ rootfs }}/var/lib/containers/storage {{ container_image || image }}\n"
-    "    CMD='set -xeuo pipefail\n"
-    "    dnf install -y fuse-overlayfs'\n"
-    "    chroot \"$CMD\""
-)
-
-patched = content.replace(old, new)
-if patched == content:
-    print("WARNING: rootfs-include-container pattern not found. Titanoboa may have changed upstream.", file=sys.stderr)
-else:
-    with open(sys.argv[1], "w") as f:
-        f.write(patched)
-PYEOF
+    python3 {{ justfile_directory() }}/iso_files/scripts/patch_titanoboa.py "${TITANOBOA_DIR}/Justfile"
 
     cd "${TITANOBOA_DIR}"
     ${SUDOIF} env \
