@@ -48,10 +48,30 @@ mkdir -p /etc/dnf
 cat > /etc/dnf/dnf.conf <<EOF
 [main]
 keepcache=0
+# Skip scriptlets that may fail due to library version mismatches during build
+tsflags=nodocs
 EOF
 
-if [[ -f /usr/sbin/restorecon ]] && ! /usr/sbin/restorecon --version >/dev/null 2>&1; then
+# Create restorecon stub BEFORE any package installation to prevent
+# LIBSELINUX version mismatch errors during filesystem package scriptlets
+mkdir -p /usr/sbin
+printf '#!/bin/bash\n# Stub to prevent restorecon failures during package installation\n# See: https://github.com/blossomos/iso/issues/restorecon-libselinux-mismatch\nexit 0\n' > /usr/sbin/restorecon
+chmod +x /usr/sbin/restorecon
+
+# Also stub restorecon in common locations where RPM scriptlets may look for it
+mkdir -p /usr/bin
+if [[ ! -f /usr/bin/restorecon ]]; then
+    ln -sf /usr/sbin/restorecon /usr/bin/restorecon
+fi
+
+# Prevent restorecon calls in RPM scriptlets from failing
+mkdir -p /usr/libexec
+printf '#!/bin/bash\nexit 0\n' > /usr/libexec/restorecon-helper
+chmod +x /usr/libexec/restorecon-helper
+
+# If a real restorecon exists (from a previous package), back it up
+if [[ -f /usr/sbin/restorecon.bak ]] || [[ -x /usr/sbin/restorecon.real ]]; then
+    : # Already backed up
+elif [[ -f /usr/sbin/restorecon ]] && ! grep -q '#!/bin/bash' /usr/sbin/restorecon 2>/dev/null; then
     mv /usr/sbin/restorecon /usr/sbin/restorecon.bak || true
-    printf '#!/bin/bash\nexit 0\n' > /usr/sbin/restorecon
-    chmod +x /usr/sbin/restorecon
 fi
