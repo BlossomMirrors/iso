@@ -23,9 +23,9 @@ TMP_RPMDB=$(mktemp -d)
 mount -t tmpfs -o size=256m tmpfs "${TMP_RPMDB}"
 
 if [[ -f "${RPM_TARGET}/rpmdb.sqlite" ]]; then
-    cp "${RPM_TARGET}/rpmdb.sqlite" "${TMP_RPMDB}/"
+    cp "${RPM_TARGET}/rpmdb.sqlite"* "${TMP_RPMDB}/"
     rpm --dbpath "${TMP_RPMDB}" -qa >/dev/null 2>&1 || {
-        rm -f "${TMP_RPMDB}/rpmdb.sqlite"
+        rm -f "${TMP_RPMDB}/rpmdb.sqlite"*
         rpm --dbpath "${TMP_RPMDB}" --initdb
     }
 else
