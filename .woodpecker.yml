@@ -26,7 +26,7 @@ steps:
       - echo "$GITHUB_TOKEN" | podman login ghcr.io -u "$GITHUB_USERNAME" --password-stdin
       # We remove cache and force pull. Should hopefully avoid glibc mismatch
       - podman rmi -f git.blossomos.org/blossom/image:latest || true
-      - podman pull --always git.blossomos.org/blossom/image:latest
+      - podman pull git.blossomos.org/blossom/image:latest
       - just build-iso blossomos latest main
 
   - name: upload-iso-main
@@ -45,7 +45,7 @@ steps:
     commands:
       - echo "$GITHUB_TOKEN" | podman login ghcr.io -u "$GITHUB_USERNAME" --password-stdin
       - podman rmi -f git.blossomos.org/blossom/image:latest-nvidia || true
-      - podman pull --always git.blossomos.org/blossom/image:latest-nvidia
+      - podman pull git.blossomos.org/blossom/image:latest-nvidia
       - just build-iso blossomos latest nvidia-open
 
   - name: upload-iso-nvidia-open
