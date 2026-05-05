@@ -114,6 +114,10 @@ build-iso image="blossomos" tag="latest" flavor="main":
 
     mkdir -p output
 
+    if ! command -v bluebuild &>/dev/null; then
+        curl -fsSL https://raw.githubusercontent.com/blue-build/cli/main/install.sh | ${SUDOIF} bash
+    fi
+
     ${SUDOIF} bluebuild generate-iso \
         --iso-name "${iso_name}" \
         image "git.blossomos.org/blossom/image:${image_tag}"
