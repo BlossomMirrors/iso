@@ -131,18 +131,6 @@ build-iso image="blossomos" tag="latest" flavor="main":
     # -------------------------------------------------------------------------
     # Workaround for GLIBC_2.43 mismatch in rootfs-include-container.
     #
-    # Inside the Fedora 43 rootfs container, Titanoboa's rootfs-include-container
-    # recipe runs:
-    #   podman pull {{ container_image || image }}
-    # This crashes with:
-    #   podman: /lib64/libc.so.6: version `GLIBC_2.43' not found
-    #                             (required by /lib64/libsubid.so.5)
-    #
-    # Root cause: libsubid.so.5 (Fedora 43 shadow-utils) requires GLIBC 2.43,
-    # but the CI runner's libc.so.6 is older. When the rootfs container runs
-    # via `podman run --rootfs work/rootfs`, the host libc is resolved instead
-    # of the rootfs's own libc, causing the version mismatch.
-    #
     # Attempt fix strategy:
     #   1. Pull the image HERE on the host (devcontainer), where podman works.
     #   2. Save it as a Docker-format tar at ${TITANOBOA_DIR}/container-image.tar.
@@ -162,9 +150,8 @@ build-iso image="blossomos" tag="latest" flavor="main":
         -o "${TITANOBOA_DIR}/container-image.tar" \
         "${CONTAINER_IMAGE}"
 
-    # Replace `podman pull {{ container_image || image }}` with a skopeo copy
-    # from the pre-saved tar. We use Python for the replacement to avoid any
-    # sed escaping issues with Just's template syntax.
+    # Replace podman pull with a skopeo copy from the pre-saved tar.
+    # We use Python for the replacement to avoid any sed escaping issues with Just's template syntax.
     python3 -c "
     import sys
     path = '${TITANOBOA_DIR}/Justfile'
