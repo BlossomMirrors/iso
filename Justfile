@@ -164,7 +164,7 @@ build-iso image="blossomos" tag="latest" flavor="main":
 
     # Replace `podman pull {{ container_image || image }}` with a skopeo copy
     # from the pre-saved tar. We use Python for the replacement to avoid any
-    # sed escaping issues with Just's {{ }} template syntax.
+    # sed escaping issues with Just's template syntax.
     python3 -c "
     import sys
     path = '${TITANOBOA_DIR}/Justfile'
