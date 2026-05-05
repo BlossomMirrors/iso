@@ -18,48 +18,35 @@ variables:
 
 steps:
   - name: build-iso-main
-    image: quay.io/fedora/fedora:43
-    pull: true
+    image: ghcr.io/ublue-os/devcontainer:latest
     privileged: true
     environment:
       <<: *ghcr_env
     commands:
-      # Install necessary tools
-      - dnf install -y podman just git curl jq
       - echo "$GITHUB_TOKEN" | podman login ghcr.io -u "$GITHUB_USERNAME" --password-stdin
-      # Force update of target image for security purposes
-      - podman rmi -f git.blossomos.org/blossom/image:latest || true
-      - podman pull git.blossomos.org/blossom/image:latest
-      # Finally, execute build
       - just build-iso blossomos latest main
 
   - name: upload-iso-main
-    image: quay.io/fedora/fedora:43
+    image: ghcr.io/ublue-os/devcontainer:latest
     environment:
       <<: *ftp_env
     commands:
-      - dnf install -y just curl jq
       - just upload-ftp main
     depends_on: [build-iso-main]
 
   - name: build-iso-nvidia-open
-    image: quay.io/fedora/fedora:43
-    pull: true
+    image: ghcr.io/ublue-os/devcontainer:latest
     privileged: true
     environment:
       <<: *ghcr_env
     commands:
-      - dnf install -y podman just git curl jq
       - echo "$GITHUB_TOKEN" | podman login ghcr.io -u "$GITHUB_USERNAME" --password-stdin
-      - podman rmi -f git.blossomos.org/blossom/image:latest-nvidia || true
-      - podman pull git.blossomos.org/blossom/image:latest-nvidia
       - just build-iso blossomos latest nvidia-open
 
   - name: upload-iso-nvidia-open
-    image: quay.io/fedora/fedora:43
+    image: ghcr.io/ublue-os/devcontainer:latest
     environment:
       <<: *ftp_env
     commands:
-      - dnf install -y just curl jq
       - just upload-ftp nvidia-open
     depends_on: [build-iso-nvidia-open]
