@@ -18,7 +18,7 @@ variables:
 
 steps:
   - name: build-iso-main
-    image: quay.io/fedora/fedora:44
+    image: quay.io/fedora/fedora:43
     pull: true
     privileged: true
     environment:
@@ -34,7 +34,7 @@ steps:
       - just build-iso blossomos latest main
 
   - name: upload-iso-main
-    image: quay.io/fedora/fedora:44
+    image: quay.io/fedora/fedora:43
     environment:
       <<: *ftp_env
     commands:
@@ -43,7 +43,7 @@ steps:
     depends_on: [build-iso-main]
 
   - name: build-iso-nvidia-open
-    image: quay.io/fedora/fedora:44
+    image: quay.io/fedora/fedora:43
     pull: true
     privileged: true
     environment:
@@ -56,7 +56,7 @@ steps:
       - just build-iso blossomos latest nvidia-open
 
   - name: upload-iso-nvidia-open
-    image: quay.io/fedora/fedora:44
+    image: quay.io/fedora/fedora:43
     environment:
       <<: *ftp_env
     commands:
