@@ -166,19 +166,19 @@ build-iso image="blossomos" tag="latest" flavor="main":
     # from the pre-saved tar. We use Python for the replacement to avoid any
     # sed escaping issues with Just's {{ }} template syntax.
     python3 -c "
-import sys
-path = '${TITANOBOA_DIR}/Justfile'
-content = open(path).read()
-old = 'podman pull {{ container_image || image }}'
-new = 'skopeo copy docker-archive:///app/container-image.tar containers-storage:{{ container_image || image }}'
-if old not in content:
-    print('ERROR: patch target not found in Titanoboa Justfile.', file=sys.stderr)
-    print('The upstream rootfs-include-container recipe may have changed.', file=sys.stderr)
-    print('Please update the patch in build-iso.', file=sys.stderr)
-    sys.exit(1)
-open(path, 'w').write(content.replace(old, new))
-print('Patch applied: podman pull -> skopeo copy docker-archive')
-"
+    import sys
+    path = '${TITANOBOA_DIR}/Justfile'
+    content = open(path).read()
+    old = 'podman pull {{{{ container_image || image }}}}'
+    new = 'skopeo copy docker-archive:///app/container-image.tar containers-storage:{{{{ container_image || image }}}}'
+    if old not in content:
+        print('ERROR: patch target not found in Titanoboa Justfile.', file=sys.stderr)
+        print('The upstream rootfs-include-container recipe may have changed.', file=sys.stderr)
+        print('Please update the patch in build-iso.', file=sys.stderr)
+        sys.exit(1)
+    open(path, 'w').write(content.replace(old, new))
+    print('Patch applied: podman pull -> skopeo copy docker-archive')
+    "
 
     cd "${TITANOBOA_DIR}"
     ${SUDOIF} env \
