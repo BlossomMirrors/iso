@@ -128,10 +128,57 @@ build-iso image="blossomos" tag="latest" flavor="main":
     # Patch titanoboa to detect the installed kernel from /lib/modules instead of hardcoding 'kernel-core'
     sed -i 's/rpm -q kernel-core --queryformat "%{evr}.%{arch}"/ls -1 \/lib\/modules/g' "${TITANOBOA_DIR}/Justfile"
 
-    # Patch rootfs-include-container to pull the image on the host rather than inside the
-    # nested rootfs container — running podman inside podman --rootfs causes glibc symbol
-    # version mismatches when the devcontainer and rootfs are on different Fedora releases.
-    python3 {{ justfile_directory() }}/iso_files/scripts/patch_titanoboa.py "${TITANOBOA_DIR}/Justfile"
+    # -------------------------------------------------------------------------
+    # Workaround for GLIBC_2.43 mismatch in rootfs-include-container.
+    #
+    # Inside the Fedora 43 rootfs container, Titanoboa's rootfs-include-container
+    # recipe runs:
+    #   podman pull {{ container_image || image }}
+    # This crashes with:
+    #   podman: /lib64/libc.so.6: version `GLIBC_2.43' not found
+    #                             (required by /lib64/libsubid.so.5)
+    #
+    # Root cause: libsubid.so.5 (Fedora 43 shadow-utils) requires GLIBC 2.43,
+    # but the CI runner's libc.so.6 is older. When the rootfs container runs
+    # via `podman run --rootfs work/rootfs`, the host libc is resolved instead
+    # of the rootfs's own libc, causing the version mismatch.
+    #
+    # Attempt fix strategy:
+    #   1. Pull the image HERE on the host (devcontainer), where podman works.
+    #   2. Save it as a Docker-format tar at ${TITANOBOA_DIR}/container-image.tar.
+    #      Titanoboa's chroot() function mounts TITANOBOA_DIR as /app inside the
+    #      rootfs container, so the tar is accessible as /app/container-image.tar.
+    #   3. Patch Titanoboa's Justfile to replace `podman pull` with
+    #      `skopeo copy docker-archive:`. skopeo is a Go binary and does NOT
+    #      link against libsubid.so.5, so it is immune to the GLIBC mismatch.
+    # -------------------------------------------------------------------------
+    CONTAINER_IMAGE="git.blossomos.org/blossom/image:${image_tag}"
+
+    echo "Pre-pulling container image on host to work around rootfs GLIBC mismatch..."
+    ${SUDOIF} ${PODMAN} pull "${CONTAINER_IMAGE}"
+
+    echo "Saving container image as tar for injection into rootfs container..."
+    ${SUDOIF} ${PODMAN} save --format docker \
+        -o "${TITANOBOA_DIR}/container-image.tar" \
+        "${CONTAINER_IMAGE}"
+
+    # Replace `podman pull {{ container_image || image }}` with a skopeo copy
+    # from the pre-saved tar. We use Python for the replacement to avoid any
+    # sed escaping issues with Just's {{ }} template syntax.
+    python3 -c "
+import sys
+path = '${TITANOBOA_DIR}/Justfile'
+content = open(path).read()
+old = 'podman pull {{ container_image || image }}'
+new = 'skopeo copy docker-archive:///app/container-image.tar containers-storage:{{ container_image || image }}'
+if old not in content:
+    print('ERROR: patch target not found in Titanoboa Justfile.', file=sys.stderr)
+    print('The upstream rootfs-include-container recipe may have changed.', file=sys.stderr)
+    print('Please update the patch in build-iso.', file=sys.stderr)
+    sys.exit(1)
+open(path, 'w').write(content.replace(old, new))
+print('Patch applied: podman pull -> skopeo copy docker-archive')
+"
 
     cd "${TITANOBOA_DIR}"
     ${SUDOIF} env \
