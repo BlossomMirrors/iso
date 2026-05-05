@@ -96,14 +96,13 @@ image_name image="blossomos" tag="stable" flavor="main":
     fi
     echo "${image_name}"
 
-# Build ISO locally using Titanoboa
+# Build ISO locally using BlueBuild
 [group('ISO')]
 build-iso image="blossomos" tag="latest" flavor="main":
     #!/usr/bin/bash
     set -eoux pipefail
 
     {{ just }} validate "{{ image }}" "{{ tag }}" "{{ flavor }}"
-    {{ just }} generate-flatpak-list
 
     if [[ "{{ flavor }}" == "main" ]]; then
         iso_name="BlossomOS-$(date +%Y.%m.%d)-x86_64.iso"
@@ -115,46 +114,19 @@ build-iso image="blossomos" tag="latest" flavor="main":
 
     mkdir -p output
 
-    WORK_DIR=$(pwd)
-    HOOK_SCRIPT="${WORK_DIR}/iso_files/configure_iso_anaconda.sh"
-    HOOK_PRE_INITRAMFS="${WORK_DIR}/iso_files/pre_initramfs.sh"
-    FLATPAK_LIST="${WORK_DIR}/flatpaks.list"
-    OUTPUT_ISO="${WORK_DIR}/output/${iso_name}"
+    ${SUDOIF} bluebuild generate-iso \
+        --iso-name "${iso_name}" \
+        image "git.blossomos.org/blossom/image:${image_tag}"
 
-    TITANOBOA_DIR=$(mktemp -d)
-    trap "${SUDOIF} rm -rf '${TITANOBOA_DIR}'" EXIT
-    git clone --depth=1 https://github.com/ublue-os/titanoboa.git "${TITANOBOA_DIR}"
-
-    # Patch titanoboa to detect the installed kernel from /lib/modules instead of hardcoding 'kernel-core'
-    sed -i 's/rpm -q kernel-core --queryformat "%{evr}.%{arch}"/ls -1 \/lib\/modules/g' "${TITANOBOA_DIR}/Justfile"
-
-    # Patch rootfs-include-container to pull the image on the host rather than inside the
-    # nested rootfs container — running podman inside podman --rootfs causes glibc symbol
-    # version mismatches when the devcontainer and rootfs are on different Fedora releases.
-    python3 {{ justfile_directory() }}/iso_files/scripts/patch_titanoboa.py "${TITANOBOA_DIR}/Justfile"
-
-    cd "${TITANOBOA_DIR}"
-    ${SUDOIF} env \
-        PATH="${PATH}" \
-        CI="${CI:-}" \
-        HOOK_post_rootfs="${HOOK_SCRIPT}" \
-        HOOK_pre_initramfs="${HOOK_PRE_INITRAMFS}" \
-        just build \
-        "git.blossomos.org/blossom/image:${image_tag}" \
-        "1" \
-        "${FLATPAK_LIST}" \
-        "squashfs"
-
-    ${SUDOIF} chown "$(id -u):$(id -g)" ./output.iso
-    mv ./output.iso "${OUTPUT_ISO}"
+    mv "${iso_name}" "output/${iso_name}"
 
     # Generate sha256 checksum and isodata.json
-    sha256=$(sha256sum "${OUTPUT_ISO}" | awk '{print $1}')
+    sha256=$(sha256sum "output/${iso_name}" | awk '{print $1}')
     printf '{\n  "name": "%s",\n  "sha256": "%s"\n}\n' "${iso_name}" "${sha256}" \
-        > "${WORK_DIR}/output/isodata{{ if flavor == 'main' { '' } else { '-' + flavor } }}.json"
+        > "output/isodata{{ if flavor == 'main' { '' } else { '-' + flavor } }}.json"
 
-    echo "Built: ${OUTPUT_ISO}"
-    cat "${WORK_DIR}/output/isodata{{ if flavor == 'main' { '' } else { '-' + flavor } }}.json"
+    echo "Built: output/${iso_name}"
+    cat "output/isodata{{ if flavor == 'main' { '' } else { '-' + flavor } }}.json"
 
 # Upload built ISO and isodata.json to BunnyCDN via FTP
 # Requires FTP_PASSWORD env var
