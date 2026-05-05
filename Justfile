@@ -155,11 +155,13 @@ upload-ftp flavor="main":
     curl -fsST "output/${iso_name}" \
         "ftp://storage.bunnycdn.com/iso/${iso_name}" \
         --user "blossomos:${FTP_PASSWORD}" \
-        --ftp-create-dirs
+        --ftp-create-dirs \
+        -Q "-DELE /iso/${iso_name}"
 
     curl -fsST "${isodata_file}" \
         "ftp://storage.bunnycdn.com/iso/$(basename ${isodata_file})" \
-        --user "blossomos:${FTP_PASSWORD}"
+        --user "blossomos:${FTP_PASSWORD}" \
+        -Q "-DELE /iso/$(basename ${isodata_file})"
 
     echo "Uploaded ${iso_name} and $(basename ${isodata_file})"
 
