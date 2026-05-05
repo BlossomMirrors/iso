@@ -146,7 +146,7 @@ build-iso image="blossomos" tag="latest" flavor="main":
     ${SUDOIF} ${PODMAN} pull "${CONTAINER_IMAGE}"
 
     echo "Saving container image as tar for injection into rootfs container..."
-    ${SUDOIF} ${PODMAN} save --format docker \
+    ${SUDOIF} ${PODMAN} save --format docker-archive \
         -o "${TITANOBOA_DIR}/container-image.tar" \
         "${CONTAINER_IMAGE}"
 
