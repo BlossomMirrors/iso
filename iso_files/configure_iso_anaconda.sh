@@ -94,7 +94,15 @@ sed -i '2s/$/;liveinst.desktop/' /usr/share/kde-settings/kde-profile/default/xdg
 . /etc/os-release
 echo "BlossomOS release $VERSION_ID ($VERSION_CODENAME)" >/etc/system-release
 
+sed -i 's/ANACONDA_PRODUCTNAME=.*/ANACONDA_PRODUCTNAME="BlossomOS"/' /usr/{,s}bin/liveinst || true
 sed -i 's/ANACONDA_PRODUCTVERSION=.*/ANACONDA_PRODUCTVERSION=""/' /usr/{,s}bin/liveinst || true
+
+# Set Anaconda product name for WebUI branding
+mkdir -p /etc/anaconda/product.d
+tee /etc/anaconda/product.d/blossomos-product.conf <<'EOF'
+[Product]
+product_name = BlossomOS
+EOF
 
 # Add StartupWMClass so the running window inherits the icon
 desktop-file-edit \

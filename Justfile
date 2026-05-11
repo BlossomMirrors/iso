@@ -96,7 +96,7 @@ image_name image="blossomos" tag="stable" flavor="main":
     fi
     echo "${image_name}"
 
-# Build ISO locally using BlueBuild
+# Build ISO using Titanoboa
 [group('ISO')]
 build-iso image="blossomos" tag="latest" flavor="main":
     #!/usr/bin/bash
@@ -114,15 +114,32 @@ build-iso image="blossomos" tag="latest" flavor="main":
 
     mkdir -p output
 
-    if ! command -v bluebuild &>/dev/null; then
-        curl -fsSL https://raw.githubusercontent.com/blue-build/cli/main/install.sh | ${SUDOIF} bash
+    # Generate flatpak list (Flathub-only; custom-remote packages excluded by generate-flatpak-list)
+    {{ just }} generate-flatpak-list
+
+    # Clone or update Titanoboa
+    titanoboa_dir="/tmp/titanoboa"
+    if [[ -d "${titanoboa_dir}/.git" ]]; then
+        git -C "${titanoboa_dir}" pull --ff-only
+    else
+        git clone --depth=1 https://github.com/ublue-os/titanoboa "${titanoboa_dir}"
     fi
 
-    ${SUDOIF} bluebuild generate-iso \
-        --iso-name "${iso_name}" \
-        image "git.blossomos.org/blossom/image:${image_tag}"
+    repo_dir="$(pwd)"
+    pushd "${titanoboa_dir}"
 
-    mv "${iso_name}" "output/${iso_name}"
+    ${SUDOIF} env \
+        HOOK_post_rootfs="${repo_dir}/iso_files/configure_iso_anaconda.sh" \
+        HOOK_pre_initramfs="${repo_dir}/iso_files/pre_initramfs.sh" \
+        just build \
+        "git.blossomos.org/blossom/image:${image_tag}" \
+        1 \
+        "${repo_dir}/flatpaks.list"
+
+    popd
+
+    ${SUDOIF} mv "${titanoboa_dir}/output.iso" "output/${iso_name}"
+    ${SUDOIF} chown "$(id -u):$(id -g)" "output/${iso_name}"
 
     # Generate sha256 checksum and isodata.json
     sha256=$(sha256sum "output/${iso_name}" | awk '{print $1}')
@@ -165,15 +182,13 @@ upload-ftp flavor="main":
 
     echo "Uploaded ${iso_name} and $(basename ${isodata_file})"
 
-# Generate Flatpak List from the BlossomOS image repo
+# Generate Flatpak List from the BlossomOS recipe (Flathub-only; custom-remote packages excluded)
 [group('ISO')]
 generate-flatpak-list:
     #!/usr/bin/bash
     set -eoux pipefail
-    curl -fsSL "https://git.blossomos.org/Blossom/image/raw/branch/main/build_files/base/packages.flatpak" | \
-        grep -v '#' | \
-        grep -v '^[[:space:]]*$' | \
-        awk '{print $1}' | \
+    curl -fsSL "https://git.blossomos.org/Blossom/image/raw/branch/main/recipes/recipe.yml" | \
+        yq '.modules[] | select(.type == "default-flatpaks") | .configurations[] | select(has("repo") | not) | .install[]' | \
         tee flatpaks.list
 
 # Verify Container with Cosign
