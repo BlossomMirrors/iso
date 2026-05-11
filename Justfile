@@ -118,7 +118,7 @@ build-iso image="blossomos" tag="latest" flavor="main":
     {{ just }} generate-flatpak-list
 
     # Clone or update Titanoboa
-    titanoboa_dir="/tmp/titanoboa"
+    titanoboa_dir="${HOME}/.cache/titanoboa"
     if [[ -d "${titanoboa_dir}/.git" ]]; then
         git -C "${titanoboa_dir}" pull --ff-only
     else
