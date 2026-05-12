@@ -32,6 +32,9 @@ SPECS=(
     "libblockdev-lvm"
     "libblockdev-dm"
     "anaconda-live"
+    "anaconda-webui"
+    "sway"
+    "firefox"
 )
 
 # Always sync releasever with os-release — the image may ship a stale value after a rebase.
@@ -45,8 +48,74 @@ fi
 
 dnf install -y "${SPECS[@]}"
 
-# Boot directly into Anaconda installer; no display manager or desktop needed.
-systemctl set-default anaconda.target
+# Patch webui-desktop:
+# 1. Remove -e so a failing command (e.g. systemctl start webui-cockpit-ws) doesn't abort the script.
+# 2. Guard DISPLAY against being unset when running on pure Wayland (no Xwayland yet).
+# 3. Add trace logging so boot-time failures are diagnosable from /tmp/webui-desktop-debug.log.
+sed -i 's|^set -eu$|set -u|' /usr/libexec/anaconda/webui-desktop
+sed -i 's|DISPLAY=\$DISPLAY|DISPLAY="${DISPLAY:-}"|g' /usr/libexec/anaconda/webui-desktop
+sed -i '2a exec 2>>/tmp/webui-desktop-debug.log\nset -x' /usr/libexec/anaconda/webui-desktop
+
+# The WebUI (slitherer) must run as liveuser, so we need a real logind session
+# with /run/user/1000, user systemd, and D-Bus — only PAM login provides all of
+# that. Use agetty autologin on tty1: PAM creates the full session, then
+# liveuser's .bash_profile starts kwin_wayland + liveinst directly.
+systemctl disable plasmalogin.service || true
+
+# pkexec (liveinst → root, webui-desktop → liveuser) needs polkit.Result.YES
+# so it can run without an interactive agent. Safe for an ephemeral live session.
+mkdir -p /etc/polkit-1/rules.d
+tee /etc/polkit-1/rules.d/00-live-installer.rules <<'EOF'
+polkit.addRule(function(action, subject) {
+    if (action.id === "org.freedesktop.policykit.exec" && subject.local) {
+        return polkit.Result.YES;
+    }
+});
+EOF
+
+mkdir -p /etc/systemd/system/getty@tty1.service.d
+tee /etc/systemd/system/getty@tty1.service.d/autologin.conf <<'EOF'
+[Unit]
+After=livesys-late.service
+Wants=livesys-late.service
+
+[Service]
+ExecStart=
+ExecStart=-/sbin/agetty --autologin root --noclear %I linux
+EOF
+
+mkdir -p /var/lib/livesys/livesys-session-extra.d
+tee /var/lib/livesys/livesys-session-extra.d/90-installer-session.sh <<'EOF'
+#!/bin/bash
+mkdir -p /root/.config/sway
+cat > /root/.config/sway/config << 'SWAYCONF'
+xwayland enable
+# Import WAYLAND_DISPLAY into user@0's systemd environment so webui-desktop's
+# pkexec env call (which reads systemctl --user show-environment) picks it up
+# and passes it through to Firefox.
+exec systemctl --user import-environment WAYLAND_DISPLAY
+exec sh -c 'sleep 2 && liveinst'
+SWAYCONF
+
+cat > /root/.bash_profile << 'PROFILE'
+if [ -z "$WAYLAND_DISPLAY" ] && [ "$(tty)" = "/dev/tty1" ]; then
+    export XDG_RUNTIME_DIR=/run/user/0
+    mkdir -p "$XDG_RUNTIME_DIR"
+    # Ensure root's user systemd session exists for systemctl --user in webui-desktop
+    systemctl start user@0.service 2>/dev/null || true
+    # Tell webui-desktop to use root (UID 0) as the installer user, so Firefox
+    # runs in the same session as sway (not as liveuser who can't reach our display)
+    export PKEXEC_UID=0
+    export WLR_RENDERER=pixman
+    export WLR_NO_HARDWARE_CURSORS=1
+    exec dbus-run-session sway --unsupported-gpu
+fi
+PROFILE
+EOF
+chmod +x /var/lib/livesys/livesys-session-extra.d/90-installer-session.sh
+
+# Set hostname
+echo "blossomos" | tee /etc/hostname
 
 # Anaconda Profile for BlossomOS
 
@@ -55,9 +124,10 @@ tee /etc/anaconda/profile.d/blossomos.conf <<'EOF'
 
 [Profile]
 profile_id = blossomos
+base_profile = fedora
 
 [Profile Detection]
-# Match os-release values
+# Match os-release values (ID=blossomos set in os-release by build script)
 os_id = blossomos
 
 [Network]
@@ -76,16 +146,24 @@ default_partitioning =
     /var  (btrfs)
 
 [User Interface]
+webui_web_engine = firefox
 hidden_spokes =
     NetworkSpoke
     PasswordSpoke
+hidden_webui_pages =
+    root-password
+    network
 EOF
 
 # Disable user creation since it's being handled by plasma-setup
 sed -i '/hidden_spokes =/a \    UserSpoke' /etc/anaconda/profile.d/blossomos.conf
+sed -i '/hidden_webui_pages =/a \    anaconda-screen-accounts' /etc/anaconda/profile.d/blossomos.conf
 
 # Configure system-release
+# Also set ID=blossomos so anaconda profile detection matches our profile.d/blossomos.conf
+# (it would otherwise match fedora-kde.conf via ID=fedora, inheriting webui_web_engine=slitherer).
 . /etc/os-release
+sed -i 's/^ID=fedora$/ID=blossomos/' /etc/os-release
 echo "BlossomOS release $VERSION_ID ($VERSION_CODENAME)" >/etc/system-release
 
 # Set Anaconda product name
@@ -101,7 +179,7 @@ cp -a /var/lib/flatpak /var/lib/flatpak_original
 
 # Interactive Kickstart
 tee -a /usr/share/anaconda/interactive-defaults.ks <<EOF
-ostreecontainer --url=$IMAGE_REF --tag=$IMAGE_TAG --transport=containers-storage --no-signature-verification
+ostreecontainer --url=$IMAGE_REF:$IMAGE_TAG --transport=containers-storage --no-signature-verification
 %include /usr/share/anaconda/post-scripts/install-configure-upgrade.ks
 %include /usr/share/anaconda/post-scripts/disable-fedora-flatpak.ks
 %include /usr/share/anaconda/post-scripts/install-flatpaks.ks
