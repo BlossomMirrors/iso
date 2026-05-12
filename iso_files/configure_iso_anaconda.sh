@@ -46,32 +46,26 @@ fi
 
 dnf install -y "${SPECS[@]}"
 
-# Disable the Plasma login manager and boot straight into Anaconda
-systemctl disable plasmalogin.service fedora-kinoite-plasmalogin-workaround.service || true
-systemctl set-default anaconda.target
-
-# anaconda.service needs a Wayland compositor (for slitherer/WebUI) but anaconda.target
-# doesn't provide one. Start kwin_wayland in DRM mode as root before Anaconda.
-mkdir -p /etc/systemd/system
-tee /etc/systemd/system/anaconda-compositor.service <<'EOF'
-[Unit]
-Description=Wayland Compositor for Anaconda WebUI
-Before=anaconda.service
-After=systemd-logind.service
-
-[Service]
-Type=simple
-Environment=HOME=/root XDG_RUNTIME_DIR=/run/user/0
-ExecStartPre=/usr/bin/mkdir -p /run/user/0
-ExecStartPre=/usr/bin/chmod 0700 /run/user/0
-ExecStart=/usr/bin/kwin_wayland --drm --no-lockscreen --no-global-shortcuts --no-kactivities
-Restart=on-failure
-RestartSec=2
-
-[Install]
-WantedBy=anaconda.target
+# webui-desktop (which starts slitherer) uses pkexec to run the browser as the
+# live user and needs PKEXEC_UID, a running user systemd session, and DISPLAY/
+# WAYLAND_DISPLAY — none of which exist without a real logged-in session.
+# plasmalogin provides all of that; we just configure it to auto-login and
+# immediately launch liveinst so the user sees the installer straight away.
+mkdir -p /etc/plasmalogin.conf.d
+tee /etc/plasmalogin.conf.d/autologin.conf <<'EOF'
+[Autologin]
+User=liveuser
+Session=plasma
 EOF
-systemctl enable anaconda-compositor.service
+
+mkdir -p /etc/xdg/autostart
+tee /etc/xdg/autostart/start-installer.desktop <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=Start Installer
+Exec=liveinst
+NoDisplay=true
+EOF
 
 # Anaconda Profile for BlossomOS
 
