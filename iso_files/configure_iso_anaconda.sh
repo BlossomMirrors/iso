@@ -32,7 +32,6 @@ SPECS=(
     "libblockdev-lvm"
     "libblockdev-dm"
     "anaconda-live"
-    "anaconda"
     "anaconda-webui"
 )
 
@@ -47,7 +46,8 @@ fi
 
 dnf install -y "${SPECS[@]}"
 
-# Boot directly into Anaconda instead of the live desktop
+# Disable the Plasma login manager and boot straight into Anaconda
+systemctl disable plasmalogin.service fedora-kinoite-plasmalogin-workaround.service || true
 systemctl enable anaconda.service
 systemctl set-default anaconda.target
 

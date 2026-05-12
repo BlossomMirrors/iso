@@ -128,6 +128,7 @@ build-iso image="blossomos" tag="latest" flavor="main":
     sed -i 's/label=type:unconfined_t/label=disable/g' "${titanoboa_dir}/Justfile"
     sed -i '/setfiles -F -r/s/$/ || true/' "${titanoboa_dir}/Justfile"
     sed -i '/mv \.\/output\.iso .* &>\/dev\/null/s/$/ || true/' "${titanoboa_dir}/Justfile"
+    sed -i 's/ Live ISO//g' "${titanoboa_dir}/src/grub.cfg.tmpl"
 
     repo_dir="$(pwd)"
     pushd "${titanoboa_dir}"
