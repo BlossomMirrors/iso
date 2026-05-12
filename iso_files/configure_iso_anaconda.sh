@@ -32,6 +32,7 @@ SPECS=(
     "libblockdev-lvm"
     "libblockdev-dm"
     "anaconda-live"
+    "anaconda"
     "anaconda-webui"
 )
 
@@ -45,6 +46,10 @@ if [[ -f /etc/os-release ]]; then
 fi
 
 dnf install -y "${SPECS[@]}"
+
+# Boot directly into Anaconda instead of the live desktop
+systemctl enable anaconda.service
+systemctl set-default anaconda.target
 
 # Anaconda Profile for BlossomOS
 
@@ -86,9 +91,6 @@ EOF
 # Disable user creation since it's being handled by plasma-setup
 sed -i '/hidden_spokes =/a \    UserSpoke' /etc/anaconda/profile.d/blossomos.conf
 sed -i '/hidden_webui_pages =/a \    anaconda-screen-accounts' /etc/anaconda/profile.d/blossomos.conf
-
-# Add installer to kickoff
-sed -i '2s/$/;liveinst.desktop/' /usr/share/kde-settings/kde-profile/default/xdg/kicker-extra-favoritesrc
 
 # Configure system-release
 . /etc/os-release
