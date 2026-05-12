@@ -32,7 +32,6 @@ SPECS=(
     "libblockdev-lvm"
     "libblockdev-dm"
     "anaconda-live"
-    "anaconda-webui"
 )
 
 # Always sync releasever with os-release — the image may ship a stale value after a rebase.
@@ -46,35 +45,8 @@ fi
 
 dnf install -y "${SPECS[@]}"
 
-# webui-desktop (which starts slitherer) uses pkexec to run the browser as the
-# live user and needs PKEXEC_UID, a running user systemd session, and DISPLAY/
-# WAYLAND_DISPLAY — none of which exist without a real logged-in session.
-# plasmalogin provides all of that; we configure autologin and add the liveinst
-# autostart via livesys-session-extra.d so it is written into liveuser's config
-# at runtime (after livesys has fully created the user and their home dir).
-# A short sleep lets the Plasma session and polkit agent finish starting before
-# liveinst runs, avoiding a pkexec failure with no auth agent present.
-mkdir -p /etc/plasmalogin.conf.d
-tee /etc/plasmalogin.conf.d/autologin.conf <<'EOF'
-[Autologin]
-User=liveuser
-Session=plasma
-EOF
-
-mkdir -p /var/lib/livesys/livesys-session-extra.d
-tee /var/lib/livesys/livesys-session-extra.d/90-installer-autostart.sh <<'EOF'
-#!/bin/bash
-mkdir -p /home/liveuser/.config/autostart
-cat > /home/liveuser/.config/autostart/start-installer.desktop << 'DESKTOP'
-[Desktop Entry]
-Type=Application
-Name=Start Installer
-Exec=bash -c 'sleep 5 && liveinst'
-NoDisplay=true
-DESKTOP
-chown -R liveuser:liveuser /home/liveuser/.config/autostart
-EOF
-chmod +x /var/lib/livesys/livesys-session-extra.d/90-installer-autostart.sh
+# Boot directly into Anaconda installer; no display manager or desktop needed.
+systemctl set-default anaconda.target
 
 # Anaconda Profile for BlossomOS
 
@@ -104,42 +76,23 @@ default_partitioning =
     /var  (btrfs)
 
 [User Interface]
-webui_web_engine = slitherer
 hidden_spokes =
     NetworkSpoke
     PasswordSpoke
-hidden_webui_pages =
-    root-password
-    network
 EOF
 
 # Disable user creation since it's being handled by plasma-setup
 sed -i '/hidden_spokes =/a \    UserSpoke' /etc/anaconda/profile.d/blossomos.conf
-sed -i '/hidden_webui_pages =/a \    anaconda-screen-accounts' /etc/anaconda/profile.d/blossomos.conf
 
 # Configure system-release
 . /etc/os-release
 echo "BlossomOS release $VERSION_ID ($VERSION_CODENAME)" >/etc/system-release
 
-sed -i 's/ANACONDA_PRODUCTNAME=.*/ANACONDA_PRODUCTNAME="BlossomOS"/' /usr/{,s}bin/liveinst || true
-sed -i 's/ANACONDA_PRODUCTVERSION=.*/ANACONDA_PRODUCTVERSION=""/' /usr/{,s}bin/liveinst || true
-
-# Set Anaconda product name for WebUI branding
+# Set Anaconda product name
 mkdir -p /etc/anaconda/product.d
 tee /etc/anaconda/product.d/blossomos-product.conf <<'EOF'
 [Product]
 product_name = BlossomOS
-EOF
-
-# Add StartupWMClass so the running window inherits the icon
-desktop-file-edit \
-    --set-key=StartupWMClass --set-value=slitherer \
-    /usr/share/applications/liveinst.desktop
-
-# Disable kwallet in live session
-tee -a /etc/xdg/kwalletrc <<EOF
-[Wallet]
-Enabled=false
 EOF
 
 # Users can mess with flatpaks on the live environment which will get
