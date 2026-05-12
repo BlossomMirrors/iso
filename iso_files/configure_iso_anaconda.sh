@@ -35,6 +35,7 @@ SPECS=(
     "anaconda-webui"
     "sway"
     "firefox"
+    "bibata-cursor-themes"
 )
 
 # Always sync releasever with os-release — the image may ship a stale value after a rebase.
@@ -46,6 +47,8 @@ if [[ -f /etc/os-release ]]; then
     fi
 fi
 
+dnf install -y dnf-plugins-core
+dnf copr enable -y peterwu/rendezvous
 dnf install -y "${SPECS[@]}"
 
 # Patch webui-desktop:
@@ -90,6 +93,8 @@ tee /var/lib/livesys/livesys-session-extra.d/90-installer-session.sh <<'EOF'
 mkdir -p /root/.config/sway
 cat > /root/.config/sway/config << 'SWAYCONF'
 xwayland enable
+default_border none
+seat * xcursor_theme Bibata-Modern-Classic 20
 # Import WAYLAND_DISPLAY into user@0's systemd environment so webui-desktop's
 # pkexec env call (which reads systemctl --user show-environment) picks it up
 # and passes it through to Firefox.
