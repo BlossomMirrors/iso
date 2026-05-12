@@ -125,17 +125,9 @@ build-iso image="blossomos" tag="latest" flavor="main":
         git clone --depth=1 https://github.com/ublue-os/titanoboa "${titanoboa_dir}"
     fi
 
-    # Titanoboa's chroot_function uses label=type:unconfined_t, but on Fedora with
-    # SELinux enforcing, Podman 4.x doesn't implicitly disable SELinux for --privileged.
-    # The builder_function in the same file correctly uses label=disable; apply the same fix.
     sed -i 's/label=type:unconfined_t/label=disable/g' "${titanoboa_dir}/Justfile"
-    # setfiles exits non-zero when it can't apply contexts to files whose SELinux types
-    # aren't loaded in the policy (e.g. waydroid). Make it non-fatal.
     sed -i '/setfiles -F -r/s/$/ || true/' "${titanoboa_dir}/Justfile"
-    # Titanoboa's @build does `mv ./output.iso {{ justfile_dir() }}` to relocate the ISO,
-    # but since we pushd into titanoboa_dir before calling just, CWD == justfile_dir() and
-    # mv fails with "same file" error. Make it non-fatal so our own mv below can proceed.
-    sed -i 's|mv ./output.iso {{ justfile_dir() }} \&>/dev/null|mv ./output.iso {{ justfile_dir() }} \&>/dev/null \|\| true|' "${titanoboa_dir}/Justfile"
+    sed -i '/mv \.\/output\.iso .* &>\/dev\/null/s/$/ || true/' "${titanoboa_dir}/Justfile"
 
     repo_dir="$(pwd)"
     pushd "${titanoboa_dir}"
