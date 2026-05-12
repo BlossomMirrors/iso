@@ -49,8 +49,11 @@ dnf install -y "${SPECS[@]}"
 # webui-desktop (which starts slitherer) uses pkexec to run the browser as the
 # live user and needs PKEXEC_UID, a running user systemd session, and DISPLAY/
 # WAYLAND_DISPLAY — none of which exist without a real logged-in session.
-# plasmalogin provides all of that; we just configure it to auto-login and
-# immediately launch liveinst so the user sees the installer straight away.
+# plasmalogin provides all of that; we configure autologin and add the liveinst
+# autostart via livesys-session-extra.d so it is written into liveuser's config
+# at runtime (after livesys has fully created the user and their home dir).
+# A short sleep lets the Plasma session and polkit agent finish starting before
+# liveinst runs, avoiding a pkexec failure with no auth agent present.
 mkdir -p /etc/plasmalogin.conf.d
 tee /etc/plasmalogin.conf.d/autologin.conf <<'EOF'
 [Autologin]
@@ -58,14 +61,20 @@ User=liveuser
 Session=plasma
 EOF
 
-mkdir -p /etc/xdg/autostart
-tee /etc/xdg/autostart/start-installer.desktop <<'EOF'
+mkdir -p /var/lib/livesys/livesys-session-extra.d
+tee /var/lib/livesys/livesys-session-extra.d/90-installer-autostart.sh <<'EOF'
+#!/bin/bash
+mkdir -p /home/liveuser/.config/autostart
+cat > /home/liveuser/.config/autostart/start-installer.desktop << 'DESKTOP'
 [Desktop Entry]
 Type=Application
 Name=Start Installer
-Exec=liveinst
+Exec=bash -c 'sleep 5 && liveinst'
 NoDisplay=true
+DESKTOP
+chown -R liveuser:liveuser /home/liveuser/.config/autostart
 EOF
+chmod +x /var/lib/livesys/livesys-session-extra.d/90-installer-autostart.sh
 
 # Anaconda Profile for BlossomOS
 
