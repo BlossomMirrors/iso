@@ -48,8 +48,30 @@ dnf install -y "${SPECS[@]}"
 
 # Disable the Plasma login manager and boot straight into Anaconda
 systemctl disable plasmalogin.service fedora-kinoite-plasmalogin-workaround.service || true
-systemctl enable anaconda.service
 systemctl set-default anaconda.target
+
+# anaconda.service needs a Wayland compositor (for slitherer/WebUI) but anaconda.target
+# doesn't provide one. Start kwin_wayland in DRM mode as root before Anaconda.
+mkdir -p /etc/systemd/system
+tee /etc/systemd/system/anaconda-compositor.service <<'EOF'
+[Unit]
+Description=Wayland Compositor for Anaconda WebUI
+Before=anaconda.service
+After=systemd-logind.service
+
+[Service]
+Type=simple
+Environment=HOME=/root XDG_RUNTIME_DIR=/run/user/0
+ExecStartPre=/usr/bin/mkdir -p /run/user/0
+ExecStartPre=/usr/bin/chmod 0700 /run/user/0
+ExecStart=/usr/bin/kwin_wayland --drm --no-lockscreen --no-global-shortcuts --no-kactivities
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=anaconda.target
+EOF
+systemctl enable anaconda-compositor.service
 
 # Anaconda Profile for BlossomOS
 
