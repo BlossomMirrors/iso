@@ -10,21 +10,13 @@ variables:
   - &ftp_env
     FTP_PASSWORD:
       from_secret: ftp_password
-  - &ghcr_env
-    GITHUB_TOKEN:
-      from_secret: github_token
-    GITHUB_USERNAME:
-      from_secret: github_username
 
 steps:
   - name: build-iso-main
     image: ghcr.io/ublue-os/devcontainer:latest
     privileged: true
-    environment:
-      <<: *ghcr_env
     commands:
-      - echo "$GITHUB_TOKEN" | podman login ghcr.io -u "$GITHUB_USERNAME" --password-stdin
-      - just build-iso blossomos latest main
+      - just build-iso blossomos main main
 
   - name: upload-iso-main
     image: ghcr.io/ublue-os/devcontainer:latest
@@ -37,11 +29,8 @@ steps:
   - name: build-iso-nvidia-open
     image: ghcr.io/ublue-os/devcontainer:latest
     privileged: true
-    environment:
-      <<: *ghcr_env
     commands:
-      - echo "$GITHUB_TOKEN" | podman login ghcr.io -u "$GITHUB_USERNAME" --password-stdin
-      - just build-iso blossomos latest nvidia-open
+      - just build-iso blossomos main nvidia-open
 
   - name: upload-iso-nvidia-open
     image: ghcr.io/ublue-os/devcontainer:latest
