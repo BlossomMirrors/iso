@@ -152,6 +152,7 @@ default_partitioning =
 
 [User Interface]
 webui_web_engine = firefox
+custom_stylesheet =
 hidden_spokes =
     NetworkSpoke
     PasswordSpoke
