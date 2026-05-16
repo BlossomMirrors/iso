@@ -12,7 +12,8 @@ sbkey='https://github.com/ublue-os/akmods/raw/main/certs/public_key.der'
 glib-compile-schemas /usr/share/glib-2.0/schemas
 
 systemctl disable rpm-ostree-countme.service || true
-systemctl disable tailscaled.service || true
+systemctl disable tailscaled || true
+systemctl disable netbird || true
 systemctl disable bootloader-update.service || true
 systemctl disable brew-upgrade.timer || true
 systemctl disable brew-update.timer || true
