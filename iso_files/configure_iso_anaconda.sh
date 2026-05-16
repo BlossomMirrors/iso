@@ -37,6 +37,7 @@ SPECS=(
     "sway"
     "firefox"
     "bibata-cursor-themes"
+    "xkeyboard-config"
 )
 
 # Always sync releasever with os-release — the image may ship a stale value after a rebase.
@@ -91,6 +92,17 @@ EOF
 mkdir -p /var/lib/livesys/livesys-session-extra.d
 tee /var/lib/livesys/livesys-session-extra.d/90-installer-session.sh <<'EOF'
 #!/bin/bash
+
+# Fix hostname — livesys factory sets it from $ID which may still be "fedora"
+hostnamectl hostname blossomos 2>/dev/null || echo blossomos > /etc/hostname
+
+# Initialise systemd-localed with a keyboard map via the proper D-Bus interface.
+# Anaconda's localization module queries localed (not vconsole.conf directly) to
+# enumerate layouts. Without this call localed has no layout data and the WebUI
+# keyboard section renders empty. The user can still change the layout in the
+# installer. This only seeds the live-environment default.
+localectl set-keymap us 2>/dev/null || true
+
 mkdir -p /root/.config/sway
 cat > /root/.config/sway/config << 'SWAYCONF'
 xwayland enable
@@ -170,7 +182,7 @@ sed -i '/hidden_webui_pages =/a \    anaconda-screen-accounts' /etc/anaconda/pro
 # Also set ID=blossomos so anaconda profile detection matches our profile.d/blossomos.conf
 # (it would otherwise match fedora-kde.conf via ID=fedora, inheriting webui_web_engine=slitherer).
 . /etc/os-release
-sed -i 's/^ID=fedora$/ID=blossomos/' /etc/os-release
+sed -i 's/^ID=.*$/ID=blossomos/' /etc/os-release
 echo "BlossomOS release $VERSION_ID ($VERSION_CODENAME)" >/etc/system-release
 
 # Set Anaconda product name
