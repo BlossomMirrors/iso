@@ -7,9 +7,13 @@ when:
   - event: manual
 
 variables:
+  - &storage_zone blossomos
   - &ftp_env
     FTP_PASSWORD:
       from_secret: ftp_password
+    BUNNY_API_KEY:
+      from_secret: bunny_api_key
+    STORAGE_ZONE: *storage_zone
 
 steps:
   - name: build-iso-main
@@ -39,3 +43,19 @@ steps:
     commands:
       - just upload-ftp nvidia-open
     depends_on: [build-iso-nvidia-open]
+
+  - name: purge-cache
+    image: alpine:latest
+    environment:
+      <<: *ftp_env
+    commands:
+      - apk add --no-cache curl jq
+      - |
+        PULLZONE_ID=$(curl -fsS --url https://api.bunny.net/pullzone \
+          --header "AccessKey: $BUNNY_API_KEY" \
+          | jq -r ".[] | select(.Name == \"$STORAGE_ZONE\") | .Id")
+        curl -fsS --request POST \
+          --url "https://api.bunny.net/pullzone/$PULLZONE_ID/purgeCache" \
+          --header "AccessKey: $BUNNY_API_KEY" \
+          --header 'Content-Type: application/json'
+    depends_on: [upload-iso-main, upload-iso-nvidia-open]
