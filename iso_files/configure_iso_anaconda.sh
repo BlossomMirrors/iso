@@ -112,7 +112,7 @@ seat * xcursor_theme Bibata-Modern-Classic 20
 # pkexec env call (which reads systemctl --user show-environment) picks it up
 # and passes it through to Firefox.
 exec systemctl --user import-environment WAYLAND_DISPLAY
-exec sh -c 'sleep 2 && liveinst'
+exec sh -c 'sleep 2 && liveinst; systemctl poweroff'
 SWAYCONF
 
 cat > /root/.bash_profile << 'PROFILE'
