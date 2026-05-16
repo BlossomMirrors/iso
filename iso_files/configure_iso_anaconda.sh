@@ -38,6 +38,7 @@ SPECS=(
     "firefox"
     "bibata-cursor-themes"
     "xkeyboard-config"
+    "python3-xkbregistry"
 )
 
 # Always sync releasever with os-release — the image may ship a stale value after a rebase.
