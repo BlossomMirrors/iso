@@ -99,7 +99,7 @@ image_name image="blossomos" tag="stable" flavor="main":
 
 # Build ISO using Titanoboa
 [group('ISO')]
-build-iso image="blossomos" tag="latest" flavor="main":
+build-iso image="blossomos" tag="main" flavor="main":
     #!/usr/bin/bash
     set -eoux pipefail
 
@@ -138,6 +138,7 @@ build-iso image="blossomos" tag="latest" flavor="main":
     ${SUDOIF} env \
         HOOK_post_rootfs="${repo_dir}/iso_files/configure_iso_anaconda.sh" \
         HOOK_pre_initramfs="${repo_dir}/iso_files/pre_initramfs.sh" \
+        BLOSSOMOS_IMAGE_TAG="${image_tag}" \
         just build \
         "git.blossomos.org/blossom/image:${image_tag}" \
         1 \

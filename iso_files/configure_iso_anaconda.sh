@@ -2,10 +2,10 @@
 
 set -eoux pipefail
 
-IMAGE_INFO="$(cat /usr/share/ublue-os/image-info.json)"
-IMAGE_TAG="$(jq -c -r '."image-tag"' <<<"$IMAGE_INFO")"
-IMAGE_REF="$(jq -c -r '."image-ref"' <<<"$IMAGE_INFO")"
-IMAGE_REF="${IMAGE_REF##*://}"
+# Use the tag passed from the Justfile; image-info.json may carry a stale
+# value from an older build of the embedded image.
+IMAGE_TAG="${BLOSSOMOS_IMAGE_TAG:-main}"
+IMAGE_REF="git.blossomos.org/blossom/image"
 sbkey='https://github.com/ublue-os/akmods/raw/main/certs/public_key.der'
 
 # Configure Live Environment
