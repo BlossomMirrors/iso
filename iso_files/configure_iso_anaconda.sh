@@ -60,6 +60,9 @@ sed -i 's|^set -eu$|set -u|' /usr/libexec/anaconda/webui-desktop
 sed -i 's|DISPLAY=\$DISPLAY|DISPLAY="${DISPLAY:-}"|g' /usr/libexec/anaconda/webui-desktop
 sed -i '2a exec 2>>/tmp/webui-desktop-debug.log\nset -x' /usr/libexec/anaconda/webui-desktop
 
+# Then remove firefox from the applications list so it isn't the default browser
+rm /usr/share/applications/org.mozilla.firefox.desktop
+
 # pkexec (liveinst → root, webui-desktop → liveuser) needs polkit.Result.YES
 # so it can run without an interactive agent. Safe for an ephemeral live session.
 mkdir -p /etc/polkit-1/rules.d
