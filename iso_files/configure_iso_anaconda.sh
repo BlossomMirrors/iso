@@ -34,9 +34,7 @@ SPECS=(
     "libblockdev-dm"
     "anaconda-live"
     "anaconda-webui"
-    "sway"
     "firefox"
-    "bibata-cursor-themes"
     "xkeyboard-config"
     "python3-xkbregistry"
 )
@@ -62,12 +60,6 @@ sed -i 's|^set -eu$|set -u|' /usr/libexec/anaconda/webui-desktop
 sed -i 's|DISPLAY=\$DISPLAY|DISPLAY="${DISPLAY:-}"|g' /usr/libexec/anaconda/webui-desktop
 sed -i '2a exec 2>>/tmp/webui-desktop-debug.log\nset -x' /usr/libexec/anaconda/webui-desktop
 
-# The WebUI (slitherer) must run as liveuser, so we need a real logind session
-# with /run/user/1000, user systemd, and D-Bus — only PAM login provides all of
-# that. Use agetty autologin on tty1: PAM creates the full session, then
-# liveuser's .bash_profile starts kwin_wayland + liveinst directly.
-systemctl disable plasmalogin.service || true
-
 # pkexec (liveinst → root, webui-desktop → liveuser) needs polkit.Result.YES
 # so it can run without an interactive agent. Safe for an ephemeral live session.
 mkdir -p /etc/polkit-1/rules.d
@@ -79,57 +71,16 @@ polkit.addRule(function(action, subject) {
 });
 EOF
 
-mkdir -p /etc/systemd/system/getty@tty1.service.d
-tee /etc/systemd/system/getty@tty1.service.d/autologin.conf <<'EOF'
-[Unit]
-After=livesys-late.service
-Wants=livesys-late.service
-
-[Service]
-ExecStart=
-ExecStart=-/sbin/agetty --autologin root --noclear %I linux
-EOF
-
 mkdir -p /var/lib/livesys/livesys-session-extra.d
 tee /var/lib/livesys/livesys-session-extra.d/90-installer-session.sh <<'EOF'
 #!/bin/bash
 
-# Fix hostname — livesys factory sets it from $ID which may still be "fedora"
-hostnamectl hostname blossomos 2>/dev/null || echo blossomos > /etc/hostname
-
-# Initialise systemd-localed with a keyboard map via the proper D-Bus interface.
-# Anaconda's localization module queries localed (not vconsole.conf directly) to
-# enumerate layouts. Without this call localed has no layout data and the WebUI
-# keyboard section renders empty. The user can still change the layout in the
-# installer. This only seeds the live-environment default.
+# Seed XLayouts so anaconda's keyboard picker renders with a default layout.
+# plannedXlayouts comes from the XLayouts D-Bus property; if empty the Keyboard
+# component returns null even though the section label is visible.
+# The user can still select any layout in the installer — this is just the default.
 localectl set-keymap us 2>/dev/null || true
-
-mkdir -p /root/.config/sway
-cat > /root/.config/sway/config << 'SWAYCONF'
-xwayland enable
-default_border none
-seat * xcursor_theme Bibata-Modern-Classic 20
-# Import WAYLAND_DISPLAY into user@0's systemd environment so webui-desktop's
-# pkexec env call (which reads systemctl --user show-environment) picks it up
-# and passes it through to Firefox.
-exec systemctl --user import-environment WAYLAND_DISPLAY
-exec sh -c 'sleep 2 && liveinst; systemctl poweroff'
-SWAYCONF
-
-cat > /root/.bash_profile << 'PROFILE'
-if [ -z "$WAYLAND_DISPLAY" ] && [ "$(tty)" = "/dev/tty1" ]; then
-    export XDG_RUNTIME_DIR=/run/user/0
-    mkdir -p "$XDG_RUNTIME_DIR"
-    # Ensure root's user systemd session exists for systemctl --user in webui-desktop
-    systemctl start user@0.service 2>/dev/null || true
-    # Tell webui-desktop to use root (UID 0) as the installer user, so Firefox
-    # runs in the same session as sway (not as liveuser who can't reach our display)
-    export PKEXEC_UID=0
-    export WLR_RENDERER=pixman
-    export WLR_NO_HARDWARE_CURSORS=1
-    exec dbus-run-session sway --unsupported-gpu
-fi
-PROFILE
+localectl set-x11-keymap us 2>/dev/null || true
 EOF
 chmod +x /var/lib/livesys/livesys-session-extra.d/90-installer-session.sh
 
@@ -166,7 +117,7 @@ default_partitioning =
 
 [User Interface]
 webui_web_engine = firefox
-custom_stylesheet =
+custom_stylesheet = /usr/share/anaconda/pixmaps/blossomos.css
 hidden_spokes =
     NetworkSpoke
     PasswordSpoke
@@ -185,6 +136,176 @@ sed -i '/hidden_webui_pages =/a \    anaconda-screen-accounts' /etc/anaconda/pro
 . /etc/os-release
 sed -i 's/^ID=.*$/ID=blossomos/' /etc/os-release
 echo "BlossomOS release $VERSION_ID ($VERSION_CODENAME)" >/etc/system-release
+
+# BlossomOS branding CSS for the installer WebUI.
+# The first page section holds the installation title ("BlossomOS X installation").
+# Without this file the text is white-on-white because the base CSS sets --_text:white
+# assuming a dark background that was previously provided by fedora.scss.
+mkdir -p /usr/share/anaconda/pixmaps
+tee /usr/share/anaconda/pixmaps/blossomos.css <<'EOF'
+/* ── Installation title header ── */
+.pf-v6-c-page__main-group > .pf-v6-c-page__main-section:first-child {
+    background: #18181F;
+    --_text: white;
+}
+.pf-v6-c-page__main-group > .pf-v6-c-page__main-section:first-child svg path {
+    color: var(--_text);
+}
+
+/* ── Wizard sidebar: dark ── */
+.pf-v6-c-wizard__nav {
+    background: #0C0C12;
+    border-right: 1px solid #27272F;
+}
+.pf-v6-c-wizard__nav-link {
+    color: #91919E;
+    border-radius: 6px;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+.pf-v6-c-wizard__nav-link:hover {
+    background: #18181F;
+    color: #C2C2CA;
+}
+.pf-v6-c-wizard__nav-link.pf-m-current {
+    background: #18181F;
+    color: #ffffff;
+}
+.pf-v6-c-wizard__nav-link.pf-m-current::before {
+    background-color: #1451FF;
+}
+/* Step numbers on dark sidebar */
+.pf-v6-c-wizard__nav-item-count {
+    color: #62626E;
+}
+.pf-v6-c-wizard__nav-link.pf-m-current .pf-v6-c-wizard__nav-item-count {
+    color: #6798FF;
+}
+
+/* ── Page / content area ── */
+.pf-v6-c-wizard__main-body,
+.pf-v6-c-page__main-section {
+    background: #ffffff;
+}
+
+/* ── Form inputs ── */
+.pf-v6-c-form-control {
+    border-radius: 6px !important;
+    border-color: #C2C2CA;
+    transition: border-color 0.15s, box-shadow 0.15s;
+}
+.pf-v6-c-form-control:focus-within {
+    border-color: #1451FF;
+    box-shadow: 0 0 0 2px rgba(20, 81, 255, 0.15);
+    outline: none;
+}
+.pf-v6-c-form__label-text {
+    font-weight: 500;
+    color: #27272F;
+}
+
+/* ── Select toggles & menus ── */
+.pf-v6-c-select__toggle,
+.pf-v6-c-menu-toggle {
+    border-radius: 6px !important;
+    border-color: #C2C2CA;
+}
+.pf-v6-c-menu-toggle:hover,
+.pf-v6-c-select__toggle:hover {
+    border-color: #91919E;
+}
+.pf-v6-c-menu {
+    border-radius: 8px;
+    border: 1px solid #EDEDF0;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.10), 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+.pf-v6-c-menu__item:hover,
+.pf-v6-c-menu__item.pf-m-focus {
+    background: #EDEDF0;
+}
+.pf-v6-c-menu__item-check svg {
+    color: #1451FF;
+}
+
+/* ── Buttons ── */
+.pf-v6-c-button {
+    border-radius: 6px !important;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+.pf-v6-c-button.pf-m-primary {
+    background: #1451FF;
+    border-color: #1451FF;
+    color: #ffffff;
+    --pf-v6-c-button--m-primary--BackgroundColor: #1451FF;
+    --pf-v6-c-button--m-primary--hover--BackgroundColor: #000DFF;
+    --pf-v6-c-button--m-primary--active--BackgroundColor: #0007C5;
+}
+.pf-v6-c-button.pf-m-primary:hover {
+    background: #000DFF;
+    border-color: #000DFF;
+    box-shadow: 0 2px 12px rgba(20, 81, 255, 0.35);
+}
+.pf-v6-c-button.pf-m-secondary {
+    border-color: #3E78FF;
+    color: #3E78FF;
+    --pf-v6-c-button--m-secondary--BorderColor: #3E78FF;
+    --pf-v6-c-button--m-secondary--Color: #3E78FF;
+}
+.pf-v6-c-button.pf-m-secondary:hover {
+    border-color: #1451FF;
+    color: #1451FF;
+    background: rgba(62, 120, 255, 0.05);
+}
+.pf-v6-c-button.pf-m-link {
+    color: #3E78FF;
+}
+.pf-v6-c-button.pf-m-link:hover {
+    color: #1451FF;
+}
+
+/* ── Cards ── */
+.pf-v6-c-card {
+    border-radius: 10px;
+    border: 1px solid #EDEDF0;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
+}
+
+/* ── Typography ── */
+.pf-v6-c-title,
+h1, h2, h3 {
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: #18181F;
+}
+
+/* ── Focus ring ── */
+:focus-visible {
+    outline-color: #3E78FF !important;
+    outline-offset: 2px;
+}
+
+/* ── Links ── */
+a {
+    color: #3E78FF;
+    text-decoration: none;
+}
+a:hover {
+    color: #1451FF;
+    text-decoration: underline;
+}
+
+/* ── Checkboxes & radios ── */
+.pf-v6-c-check__input:checked,
+.pf-v6-c-radio__input:checked {
+    accent-color: #1451FF;
+}
+
+/* ── Alerts ── */
+.pf-v6-c-alert {
+    border-radius: 8px;
+}
+EOF
 
 # Set Anaconda product name
 mkdir -p /etc/anaconda/product.d
