@@ -334,6 +334,15 @@ cp -a /var/lib/flatpak /var/lib/flatpak_original
 
 # Interactive Kickstart
 tee -a /usr/share/anaconda/interactive-defaults.ks <<EOF
+%pre-install
+# containers-storage transport stages blobs in /var/tmp before committing to
+# the ostree sysroot. The live system's /var/tmp is a small tmpfs — not big
+# enough for a full bootc image. Bind-mount a dir on the already-formatted
+# target root so ostree gets disk-backed staging space instead.
+mkdir -p /mnt/sysimage/.ostree-staging
+mount --bind /mnt/sysimage/.ostree-staging /var/tmp
+%end
+
 ostreecontainer --url=$IMAGE_REF:$IMAGE_TAG --transport=containers-storage --no-signature-verification
 %include /usr/share/anaconda/post-scripts/install-configure-upgrade.ks
 %include /usr/share/anaconda/post-scripts/disable-fedora-flatpak.ks
