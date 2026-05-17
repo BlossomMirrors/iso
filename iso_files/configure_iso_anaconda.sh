@@ -314,6 +314,17 @@ tee /etc/anaconda/product.d/blossomos-product.conf <<'EOF'
 product_name = BlossomOS
 EOF
 
+# Install flatpaks from the custom blossomos remote.
+# Titanoboa's rootfs-include-flatpaks only adds Flathub and silently skips
+# anything not found there, so custom-remote packages must be installed here.
+flatpak remote-add --system --if-not-exists blossomos \
+    https://repo.blossomos.org/blossomos.flatpakrepo
+flatpak install --system --noninteractive -y blossomos \
+    net.imput.helium \
+    runtime/org.kde.KStyle.BlossomUI/x86_64/6.9 \
+    runtime/org.kde.KStyle.BlossomUI/x86_64/5.15-24.08 \
+    || true
+
 # Users can mess with flatpaks on the live environment which will get
 # carried over to the installed system
 cp -a /var/lib/flatpak /var/lib/flatpak_original
