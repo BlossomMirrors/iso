@@ -119,17 +119,11 @@ build-iso image="blossomos" tag="main" flavor="main":
     {{ just }} generate-flatpak-list
 
     # Clone or update Titanoboa
-    # Pinned to a known-good commit until we fork
     titanoboa_dir="/var/cache/titanoboa"
-    titanoboa_commit="840217d97bd0bc9a52466508c54d8dda5c5ba2fd"
     if [[ -d "${titanoboa_dir}/.git" ]]; then
-        if ! git -C "${titanoboa_dir}" cat-file -e "${titanoboa_commit}^{commit}" 2>/dev/null; then
-            git -C "${titanoboa_dir}" fetch --unshallow 2>/dev/null || git -C "${titanoboa_dir}" fetch origin
-        fi
-        git -C "${titanoboa_dir}" checkout "${titanoboa_commit}"
+        git -C "${titanoboa_dir}" pull --ff-only
     else
-        git clone https://github.com/ublue-os/titanoboa "${titanoboa_dir}"
-        git -C "${titanoboa_dir}" checkout "${titanoboa_commit}"
+        git clone --depth=1 https://git.blossomos.org/Blossom/titanoboa "${titanoboa_dir}"
     fi
 
     sed -i 's/label=type:unconfined_t/label=disable/g' "${titanoboa_dir}/Justfile"
