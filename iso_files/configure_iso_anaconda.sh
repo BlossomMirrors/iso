@@ -2,9 +2,24 @@
 
 set -eoux pipefail
 
-# Use the tag passed from the Justfile; image-info.json may carry a stale
-# value from an older build of the embedded image.
-IMAGE_TAG="${BLOSSOMOS_IMAGE_TAG:-main}"
+# Prefer the tag passed from the Justfile. If it didn't reach the chroot
+# (Titanoboa doesn't forward arbitrary env vars), derive the tag from the
+# image-info.json baked into the running image: use its tag as the base and
+# append -nvidia when the image name indicates a nvidia variant.
+IMAGE_TAG="${BLOSSOMOS_IMAGE_TAG:-}"
+if [[ -z "$IMAGE_TAG" ]]; then
+    if [[ -f /usr/share/ublue-os/image-info.json ]]; then
+        _base_tag=$(jq -r '."image-tag" // "main"' /usr/share/ublue-os/image-info.json)
+        _image_name=$(jq -r '."image-name" // ""' /usr/share/ublue-os/image-info.json)
+        if [[ "$_image_name" == *nvidia* && "$_base_tag" != *-nvidia ]]; then
+            IMAGE_TAG="${_base_tag}-nvidia"
+        else
+            IMAGE_TAG="${_base_tag}"
+        fi
+    else
+        IMAGE_TAG="main"
+    fi
+fi
 IMAGE_REF="git.blossomos.org/blossom/image"
 sbkey='https://github.com/ublue-os/akmods/raw/main/certs/public_key.der'
 
