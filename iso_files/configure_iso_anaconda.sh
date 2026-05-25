@@ -349,7 +349,7 @@ mkdir -p /mnt/sysimage/.ostree-staging
 mount --bind /mnt/sysimage/.ostree-staging /var/tmp
 %end
 
-ostreecontainer --url=$IMAGE_REF:$IMAGE_TAG --transport=containers-storage --no-signature-verification
+ostreecontainer --url=$IMAGE_REF --transport=containers-storage --no-signature-verification
 %include /usr/share/anaconda/post-scripts/install-configure-upgrade.ks
 %include /usr/share/anaconda/post-scripts/disable-fedora-flatpak.ks
 %include /usr/share/anaconda/post-scripts/install-flatpaks.ks
@@ -359,7 +359,7 @@ EOF
 # Switch to signed image after install
 tee /usr/share/anaconda/post-scripts/install-configure-upgrade.ks <<EOF
 %post --erroronfail
-bootc switch --mutate-in-place --transport registry $IMAGE_REF:$IMAGE_TAG
+bootc switch --mutate-in-place --transport registry $IMAGE_REF
 %end
 EOF
 
