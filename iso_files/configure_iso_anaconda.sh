@@ -28,6 +28,7 @@ systemctl disable rpm-ostreed-automatic.timer || true
 systemctl disable uupd.timer || true
 systemctl disable ublue-system-setup.service || true
 systemctl disable flatpak-preinstall.service || true
+systemctl disable system-flatpak-setup.service || true
 systemctl --global disable podman-auto-update.timer || true
 systemctl --global disable ublue-user-setup.service || true
 systemctl --global disable bazaar.service || true
