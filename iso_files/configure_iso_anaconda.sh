@@ -3,11 +3,11 @@
 set -eoux pipefail
 
 IMAGE_INFO="/usr/share/ublue-os/image-info.json"
-if [[ -f "$IMAGE_INFO" ]]; then
-    IMAGE_FLAVOR=$(jq -r '."image-flavor" // "main"' "$IMAGE_INFO")
-    IMAGE_NAME=$(jq -r '."image-name" // ""' "$IMAGE_INFO")
-    IMAGE_VARIANT="${IMAGE_NAME#blossomos-}"
-    IMAGE_TAG="${IMAGE_FLAVOR}-${IMAGE_VARIANT}"
+IMAGE_FLAVOR=$(jq -r '."image-flavor" // "main"' "$IMAGE_INFO")
+IMAGE_NAME=$(jq -r '."image-name" // ""' "$IMAGE_INFO")
+if [[ "$IMAGE_NAME" == blossomos-* ]]; then
+    variant="${IMAGE_NAME#blossomos-}"
+    IMAGE_TAG="main${variant:+-$variant}"
 else
     IMAGE_TAG="main"
 fi
