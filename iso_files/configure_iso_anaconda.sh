@@ -11,7 +11,7 @@ if [[ "$IMAGE_NAME" == blossomos-* ]]; then
 else
     IMAGE_TAG="main"
 fi
-IMAGE_REF="git.blossomos.org/blossomos/image:${IMAGE_TAG}"
+IMAGE_REF="git.blossomos.org/blossom/image:${IMAGE_TAG}"
 sbkey='https://github.com/ublue-os/akmods/raw/main/certs/public_key.der'
 
 # Configure Live Environment
