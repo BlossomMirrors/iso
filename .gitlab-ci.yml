@@ -1,53 +1,29 @@
 stages:
-  - build
-  - upload
+  - build-upload
   - purge
 
 variables:
   STORAGE_ZONE: blossomos
 
-# Run on push to main, scheduled pipelines (weekly-build equivalent), and manual web triggers
 workflow:
   rules:
     - if: $CI_COMMIT_BRANCH == "main" && $CI_PIPELINE_SOURCE == "push"
     - if: $CI_PIPELINE_SOURCE == "schedule"
     - if: $CI_PIPELINE_SOURCE == "web"
 
-build-iso-main:
-  stage: build
+build-upload-main:
+  stage: build-upload
   image: ghcr.io/ublue-os/devcontainer:latest
   script:
     - just build-iso blossomos main main
-  artifacts:
-    paths:
-      - output/
-    expire_in: 1 hour
+    - just upload-ftp main
 
-build-iso-nvidia-open:
-  stage: build
+build-upload-nvidia-open:
+  stage: build-upload
   image: ghcr.io/ublue-os/devcontainer:latest
   script:
     - just build-iso blossomos main nvidia-open
-  artifacts:
-    paths:
-      - output/
-    expire_in: 1 hour
-
-upload-iso-main:
-  stage: upload
-  image: ghcr.io/ublue-os/devcontainer:latest
-  script:
-    - just upload-ftp main
-  needs:
-    - build-iso-main
-
-upload-iso-nvidia-open:
-  stage: upload
-  image: ghcr.io/ublue-os/devcontainer:latest
-  script:
     - just upload-ftp nvidia-open
-  needs:
-    - build-iso-nvidia-open
 
 purge-cache:
   stage: purge
@@ -63,6 +39,5 @@ purge-cache:
         --header "AccessKey: $BUNNY_API_KEY" \
         --header 'Content-Type: application/json'
   needs:
-    - upload-iso-main
-    - upload-iso-nvidia-open
-  dependencies: []
+    - build-upload-main
+    - build-upload-nvidia-open
