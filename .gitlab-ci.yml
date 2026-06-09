@@ -1,0 +1,68 @@
+stages:
+  - build
+  - upload
+  - purge
+
+variables:
+  STORAGE_ZONE: blossomos
+
+# Run on push to main, scheduled pipelines (weekly-build equivalent), and manual web triggers
+workflow:
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main" && $CI_PIPELINE_SOURCE == "push"
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+    - if: $CI_PIPELINE_SOURCE == "web"
+
+build-iso-main:
+  stage: build
+  image: ghcr.io/ublue-os/devcontainer:latest
+  script:
+    - just build-iso blossomos main main
+  artifacts:
+    paths:
+      - output/
+    expire_in: 1 hour
+
+build-iso-nvidia-open:
+  stage: build
+  image: ghcr.io/ublue-os/devcontainer:latest
+  script:
+    - just build-iso blossomos main nvidia-open
+  artifacts:
+    paths:
+      - output/
+    expire_in: 1 hour
+
+upload-iso-main:
+  stage: upload
+  image: ghcr.io/ublue-os/devcontainer:latest
+  script:
+    - just upload-ftp main
+  needs:
+    - build-iso-main
+
+upload-iso-nvidia-open:
+  stage: upload
+  image: ghcr.io/ublue-os/devcontainer:latest
+  script:
+    - just upload-ftp nvidia-open
+  needs:
+    - build-iso-nvidia-open
+
+purge-cache:
+  stage: purge
+  image: alpine:latest
+  script:
+    - apk add --no-cache curl jq
+    - |
+      PULLZONE_ID=$(curl -fsS --url https://api.bunny.net/pullzone \
+        --header "AccessKey: $BUNNY_API_KEY" \
+        | jq -r ".[] | select(.Name == \"$STORAGE_ZONE\") | .Id")
+      curl -fsS --request POST \
+        --url "https://api.bunny.net/pullzone/$PULLZONE_ID/purgeCache" \
+        --header "AccessKey: $BUNNY_API_KEY" \
+        --header 'Content-Type: application/json'
+  needs:
+    - upload-iso-main
+    - upload-iso-nvidia-open
+  dependencies: []
