@@ -33,7 +33,7 @@ Pre-built ISOs are available at [blossomos.org](https://blossomos.org).
 └── README.md                               # This file
 ```
 
-The flatpak list for the live environment is fetched directly from the [image repo](https://git.blossomos.org/Blossom/image) at build time.
+The flatpak list for the live environment is fetched directly from the [image repo](https://dev.blossomos.org/blossom/os/core/image) at build time.
 
 ## Building ISOs
 
@@ -142,7 +142,7 @@ Contributions are welcome! Please follow these guidelines:
 
 - **Branding**: Update images in `iso_files/`
 - **Anaconda config**: Edit profile in `configure_iso_anaconda-webui.sh`
-- **Flatpak lists**: Modify [`build_files/base/packages.flatpak`](https://git.blossomos.org/Blossom/image/src/branch/main/build_files/base/packages.flatpak) in the image repo
+- **Flatpak lists**: Modify [`build_files/base/packages.flatpak`](https://dev.blossomos.org/blossom/os/core/image/-/raw/main/build_files/base/packages.flatpak) in the image repo
 - **Partitioning**: Modify `default_partitioning` in the Anaconda profile
 
 ## Documentation
@@ -150,12 +150,12 @@ Contributions are welcome! Please follow these guidelines:
 - [BlossomOS Documentation](https://docs.blossomos.org)
 - [BlossomOS Community](https://community.blossomos.org)
 - [Titanoboa](https://github.com/ublue-os/titanoboa) — ISO builder tool
-- [Image Repository](https://git.blossomos.org/Blossom/image) — OCI image source
+- [Image Repository](https://dev.blossomos.org/blossom/os/core/image) — OCI image source
 
 ## Resources
 
 - [BlossomOS Website](https://blossomos.org)
-- [BlossomOS Image Repository](https://git.blossomos.org/Blossom/image)
+- [BlossomOS Image Repository](https://dev.blossomos.org/blossom/os/core/image)
 - [Universal Blue](https://universal-blue.org)
 
 ## License

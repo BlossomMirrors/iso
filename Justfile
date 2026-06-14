@@ -123,7 +123,7 @@ build-iso image="blossomos" tag="main" flavor="main":
     if [[ -d "${titanoboa_dir}/.git" ]]; then
         git -C "${titanoboa_dir}" pull --ff-only
     else
-        git clone --depth=1 https://git.blossomos.org/Blossom/titanoboa "${titanoboa_dir}"
+        git clone --depth=1 https://dev.blossomos.org/blossom/os/titanoboa.git "${titanoboa_dir}"
     fi
 
     sed -i 's/label=type:unconfined_t/label=disable/g' "${titanoboa_dir}/Justfile"
@@ -140,7 +140,7 @@ build-iso image="blossomos" tag="main" flavor="main":
         HOOK_pre_initramfs="${repo_dir}/iso_files/pre_initramfs.sh" \
         BLOSSOMOS_IMAGE_TAG="${image_tag}" \
         just build \
-        "git.blossomos.org/blossom/image:${image_tag}" \
+        "registry.blossomos.org/blossom/image:${image_tag}" \
         1 \
         "${repo_dir}/flatpaks.list"
 
@@ -195,13 +195,13 @@ upload-ftp flavor="main":
 generate-flatpak-list:
     #!/usr/bin/bash
     set -eoux pipefail
-    curl -fsSL "https://git.blossomos.org/Blossom/image/raw/branch/main/recipes/recipe.yml" | \
+    curl -fsSL "https://dev.blossomos.org/blossom/os/core/image/-/raw/main/recipes/recipe.yml" | \
         yq '.modules[] | select(.type == "default-flatpaks") | .configurations[] | select(has("repo") | not) | .install[]' | \
         tee flatpaks.list
 
 # Verify Container with Cosign
 [group('Utility')]
-verify-container container="" registry="git.blossomos.org/blossom" key="":
+verify-container container="" registry="registry.blossomos.org/blossom" key="":
     #!/usr/bin/bash
     set -eou pipefail
 
