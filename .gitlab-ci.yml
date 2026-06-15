@@ -14,6 +14,8 @@ workflow:
 build-upload-main:
   stage: build-upload
   image: ghcr.io/ublue-os/devcontainer:latest
+  tags:
+    - bigboi-docker-priv
   script:
     - just build-iso blossomos main main
     - just upload-ftp main
@@ -21,6 +23,8 @@ build-upload-main:
 build-upload-nvidia-open:
   stage: build-upload
   image: ghcr.io/ublue-os/devcontainer:latest
+  tags:
+    - bigboi-docker-priv
   script:
     - just build-iso blossomos main nvidia-open
     - just upload-ftp nvidia-open
