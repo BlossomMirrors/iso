@@ -1,6 +1,6 @@
 # BlossomOS ISO Builder
 
-[![Build Status](https://ci.blossomos.org/api/badges/2/status.svg)](https://ci.blossomos.org)
+[![pipeline status](https://dev.blossomos.org/blossom/os/iso/badges/main/pipeline.svg)](https://dev.blossomos.org/blossom/os/iso/-/commits/main)
 
 This repository builds bootable BlossomOS installation media using [Titanoboa](https://github.com/ublue-os/titanoboa) and the Anaconda installer with WebUI.
 
