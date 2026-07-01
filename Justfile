@@ -190,13 +190,14 @@ upload-ftp flavor="main":
 
     echo "Uploaded ${iso_name} and $(basename ${isodata_file})"
 
-# Generate Flatpak List from the BlossomOS recipe (Flathub-only; custom-remote packages excluded)
+# Generate Flatpak List from the BlossomOS image's packages.flatpak (Flathub-only; custom-remote packages excluded)
 [group('ISO')]
 generate-flatpak-list:
     #!/usr/bin/bash
     set -eoux pipefail
-    curl -fsSL "https://dev.blossomos.org/blossom/os/core/image/-/raw/main/recipes/recipe.yml" | \
-        yq '.modules[] | select(.type == "default-flatpaks") | .configurations[] | select(has("repo") | not) | .install[]' | \
+    curl -fsSL "https://dev.blossomos.org/blossom/os/core/image/-/raw/main/build_files/base/packages.flatpak" | \
+        grep -v '^#\|^[[:space:]]*$' | \
+        awk 'NF == 1 {print $1}' | \
         tee flatpaks.list
 
 # Verify Container with Cosign
