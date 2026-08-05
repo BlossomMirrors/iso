@@ -157,16 +157,22 @@ build-iso image="blossomos" tag="main" flavor="main":
     echo "Built: output/${iso_name}"
     cat "output/isodata{{ if flavor == 'main' { '' } else { '-' + flavor } }}.json"
 
-# Upload built ISO and isodata.json to BunnyCDN via FTP
-# Requires FTP_PASSWORD env var
+# Upload built ISO and isodata.json to Cloudflare R2 (EU) via rclone
+# Requires R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_ENDPOINT and R2_BUCKET env vars
 [group('ISO')]
-upload-ftp flavor="main":
+upload-r2 flavor="main":
     #!/usr/bin/bash
     set -eoux pipefail
 
-    if [[ -z "${FTP_PASSWORD:-}" ]]; then
-        echo "ERROR: FTP_PASSWORD is not set"
-        exit 1
+    for var in R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY R2_ENDPOINT R2_BUCKET; do
+        if [[ -z "${!var:-}" ]]; then
+            echo "ERROR: ${var} is not set"
+            exit 1
+        fi
+    done
+
+    if ! command -v rclone >/dev/null 2>&1; then
+        ${SUDOIF} dnf install -y rclone
     fi
 
     if [[ "{{ flavor }}" == "main" ]]; then
@@ -177,18 +183,18 @@ upload-ftp flavor="main":
 
     iso_name=$(jq -r '.name' "${isodata_file}")
 
-    curl -fsST "output/${iso_name}" \
-        "ftp://storage.bunnycdn.com/iso/${iso_name}" \
-        --user "blossomos:${FTP_PASSWORD}" \
-        --ftp-create-dirs \
-        -Q "*DELE /iso/${iso_name}"
+    export RCLONE_CONFIG_R2_TYPE=s3
+    export RCLONE_CONFIG_R2_PROVIDER=Cloudflare
+    export RCLONE_CONFIG_R2_ACCESS_KEY_ID="${R2_ACCESS_KEY_ID}"
+    export RCLONE_CONFIG_R2_SECRET_ACCESS_KEY="${R2_SECRET_ACCESS_KEY}"
+    export RCLONE_CONFIG_R2_ENDPOINT="${R2_ENDPOINT}"
+    export RCLONE_CONFIG_R2_REGION=auto
+    export RCLONE_CONFIG_R2_NO_CHECK_BUCKET=true
 
-    curl -fsST "${isodata_file}" \
-        "ftp://storage.bunnycdn.com/iso/$(basename ${isodata_file})" \
-        --user "blossomos:${FTP_PASSWORD}" \
-        -Q "*DELE /iso/$(basename ${isodata_file})"
+    rclone copyto "output/${iso_name}" "r2:${R2_BUCKET}/iso/${iso_name}"
+    rclone copyto "${isodata_file}" "r2:${R2_BUCKET}/iso/$(basename "${isodata_file}")"
 
-    echo "Uploaded ${iso_name} and $(basename ${isodata_file})"
+    echo "Uploaded ${iso_name} and $(basename "${isodata_file}") to R2"
 
 # Generate Flatpak List from the BlossomOS image's packages.flatpak (Flathub-only; custom-remote packages excluded)
 [group('ISO')]
