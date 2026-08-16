@@ -329,7 +329,7 @@ EOF
 # Titanoboa's rootfs-include-flatpaks only adds Flathub and silently skips
 # anything not found there, so custom-remote packages must be installed here.
 flatpak remote-add --system --if-not-exists blossomos \
-    https://repo.blossomos.org/blossomos.flatpakrepo
+    https://forge.arcstore.net/flatpak.flatpakrepo
 flatpak install --system --noninteractive -y blossomos \
     net.imput.helium \
     runtime/org.kde.KStyle.BlossomUI/x86_64/6.9 \
