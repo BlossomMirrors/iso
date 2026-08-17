@@ -21,6 +21,7 @@ glib-compile-schemas /usr/share/glib-2.0/schemas
 systemctl disable rpm-ostree-countme.service || true
 systemctl disable tailscaled || true
 systemctl disable netbird || true
+systemctl disable mullvad || true
 systemctl disable bootloader-update.service || true
 systemctl disable brew-upgrade.timer || true
 systemctl disable brew-update.timer || true
@@ -41,7 +42,6 @@ SPECS=(
     "libblockdev-lvm"
     "libblockdev-dm"
     "anaconda-live"
-    "anaconda-webui"
     "firefox"
     "xkeyboard-config"
     "python3-xkbregistry"
@@ -59,6 +59,18 @@ fi
 dnf install -y dnf-plugins-core
 dnf copr enable -y peterwu/rendezvous
 dnf install -y "${SPECS[@]}"
+
+# Custom Anaconda WebUI
+shopt -s nullglob
+webui_rpms=(/app/anaconda-webui-*.rpm)
+shopt -u nullglob
+if (( ${#webui_rpms[@]} > 0 )); then
+    echo "Installing local anaconda-webui: ${webui_rpms[*]}"
+    dnf install -y --nogpgcheck "${webui_rpms[@]}"
+else
+    echo "Build failed: no anaconda-webui RPM staged"
+    exit 1
+fi
 
 # Patch webui-desktop:
 # 1. Remove -e so a failing command (e.g. systemctl start webui-cockpit-ws) doesn't abort the script.
@@ -128,7 +140,6 @@ default_partitioning =
 
 [User Interface]
 webui_web_engine = firefox
-custom_stylesheet = /usr/share/anaconda/pixmaps/blossomos.css
 hidden_spokes =
     NetworkSpoke
     PasswordSpoke
@@ -147,176 +158,6 @@ sed -i '/hidden_webui_pages =/a \    anaconda-screen-accounts' /etc/anaconda/pro
 . /etc/os-release
 sed -i 's/^ID=.*$/ID=blossomos/' /etc/os-release
 echo "BlossomOS release $VERSION_ID ($VERSION_CODENAME)" >/etc/system-release
-
-# BlossomOS branding CSS for the installer WebUI.
-# The first page section holds the installation title ("BlossomOS X installation").
-# Without this file the text is white-on-white because the base CSS sets --_text:white
-# assuming a dark background that was previously provided by fedora.scss.
-mkdir -p /usr/share/anaconda/pixmaps
-tee /usr/share/anaconda/pixmaps/blossomos.css <<'EOF'
-/* ── Installation title header ── */
-.pf-v6-c-page__main-group > .pf-v6-c-page__main-section:first-child {
-    background: #18181F;
-    --_text: white;
-}
-.pf-v6-c-page__main-group > .pf-v6-c-page__main-section:first-child svg path {
-    color: var(--_text);
-}
-
-/* ── Wizard sidebar: dark ── */
-.pf-v6-c-wizard__nav {
-    background: #0C0C12;
-    border-right: 1px solid #27272F;
-}
-.pf-v6-c-wizard__nav-link {
-    color: #91919E;
-    border-radius: 6px;
-    transition: background 0.15s ease, color 0.15s ease;
-}
-.pf-v6-c-wizard__nav-link:hover {
-    background: #18181F;
-    color: #C2C2CA;
-}
-.pf-v6-c-wizard__nav-link.pf-m-current {
-    background: #18181F;
-    color: #ffffff;
-}
-.pf-v6-c-wizard__nav-link.pf-m-current::before {
-    background-color: #1451FF;
-}
-/* Step numbers on dark sidebar */
-.pf-v6-c-wizard__nav-item-count {
-    color: #62626E;
-}
-.pf-v6-c-wizard__nav-link.pf-m-current .pf-v6-c-wizard__nav-item-count {
-    color: #6798FF;
-}
-
-/* ── Page / content area ── */
-.pf-v6-c-wizard__main-body,
-.pf-v6-c-page__main-section {
-    background: #ffffff;
-}
-
-/* ── Form inputs ── */
-.pf-v6-c-form-control {
-    border-radius: 6px !important;
-    border-color: #C2C2CA;
-    transition: border-color 0.15s, box-shadow 0.15s;
-}
-.pf-v6-c-form-control:focus-within {
-    border-color: #1451FF;
-    box-shadow: 0 0 0 2px rgba(20, 81, 255, 0.15);
-    outline: none;
-}
-.pf-v6-c-form__label-text {
-    font-weight: 500;
-    color: #27272F;
-}
-
-/* ── Select toggles & menus ── */
-.pf-v6-c-select__toggle,
-.pf-v6-c-menu-toggle {
-    border-radius: 6px !important;
-    border-color: #C2C2CA;
-}
-.pf-v6-c-menu-toggle:hover,
-.pf-v6-c-select__toggle:hover {
-    border-color: #91919E;
-}
-.pf-v6-c-menu {
-    border-radius: 8px;
-    border: 1px solid #EDEDF0;
-    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.10), 0 2px 8px rgba(0, 0, 0, 0.06);
-}
-.pf-v6-c-menu__item:hover,
-.pf-v6-c-menu__item.pf-m-focus {
-    background: #EDEDF0;
-}
-.pf-v6-c-menu__item-check svg {
-    color: #1451FF;
-}
-
-/* ── Buttons ── */
-.pf-v6-c-button {
-    border-radius: 6px !important;
-    font-weight: 500;
-    letter-spacing: 0.01em;
-    transition: background 0.15s ease, box-shadow 0.15s ease;
-}
-.pf-v6-c-button.pf-m-primary {
-    background: #1451FF;
-    border-color: #1451FF;
-    color: #ffffff;
-    --pf-v6-c-button--m-primary--BackgroundColor: #1451FF;
-    --pf-v6-c-button--m-primary--hover--BackgroundColor: #000DFF;
-    --pf-v6-c-button--m-primary--active--BackgroundColor: #0007C5;
-}
-.pf-v6-c-button.pf-m-primary:hover {
-    background: #000DFF;
-    border-color: #000DFF;
-    box-shadow: 0 2px 12px rgba(20, 81, 255, 0.35);
-}
-.pf-v6-c-button.pf-m-secondary {
-    border-color: #3E78FF;
-    color: #3E78FF;
-    --pf-v6-c-button--m-secondary--BorderColor: #3E78FF;
-    --pf-v6-c-button--m-secondary--Color: #3E78FF;
-}
-.pf-v6-c-button.pf-m-secondary:hover {
-    border-color: #1451FF;
-    color: #1451FF;
-    background: rgba(62, 120, 255, 0.05);
-}
-.pf-v6-c-button.pf-m-link {
-    color: #3E78FF;
-}
-.pf-v6-c-button.pf-m-link:hover {
-    color: #1451FF;
-}
-
-/* ── Cards ── */
-.pf-v6-c-card {
-    border-radius: 10px;
-    border: 1px solid #EDEDF0;
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
-}
-
-/* ── Typography ── */
-.pf-v6-c-title,
-h1, h2, h3 {
-    font-weight: 600;
-    letter-spacing: -0.01em;
-    color: #18181F;
-}
-
-/* ── Focus ring ── */
-:focus-visible {
-    outline-color: #3E78FF !important;
-    outline-offset: 2px;
-}
-
-/* ── Links ── */
-a {
-    color: #3E78FF;
-    text-decoration: none;
-}
-a:hover {
-    color: #1451FF;
-    text-decoration: underline;
-}
-
-/* ── Checkboxes & radios ── */
-.pf-v6-c-check__input:checked,
-.pf-v6-c-radio__input:checked {
-    accent-color: #1451FF;
-}
-
-/* ── Alerts ── */
-.pf-v6-c-alert {
-    border-radius: 8px;
-}
-EOF
 
 # Set Anaconda product name
 mkdir -p /etc/anaconda/product.d
@@ -352,9 +193,11 @@ mount --bind /mnt/sysimage/.ostree-staging /var/tmp
 %end
 
 ostreecontainer --url=$IMAGE_REF --transport=containers-storage --no-signature-verification
+bootloader --append="quiet splash"
 %include /usr/share/anaconda/post-scripts/install-configure-upgrade.ks
 %include /usr/share/anaconda/post-scripts/disable-fedora-flatpak.ks
 %include /usr/share/anaconda/post-scripts/install-flatpaks.ks
+%include /usr/share/anaconda/post-scripts/configure-grub.ks
 %include /usr/share/anaconda/post-scripts/secureboot-enroll-key.ks
 EOF
 
@@ -380,6 +223,69 @@ target="/mnt/sysimage/ostree/deploy/default/deploy/$deployment.0/var/lib/"
 mkdir -p "$target"
 rsync -aAXUHKP /var/lib/flatpak_original/ "$target/flatpak"
 sync
+%end
+EOF
+
+# GRUB defaults for the installed system
+tee /usr/share/anaconda/post-scripts/configure-grub.ks <<'EOF'
+%post --erroronfail
+set -oue pipefail
+
+grub_defaults="/etc/default/grub"
+touch "$grub_defaults"
+
+set_grub_default() {
+    if grep -q "^$1=" "$grub_defaults"; then
+        sed -i "s|^$1=.*|$1=$2|" "$grub_defaults"
+    else
+        echo "$1=$2" >>"$grub_defaults"
+    fi
+}
+
+# Without this a regenerated config drops the BLS entries and the system
+# has nothing left to boot.
+set_grub_default GRUB_ENABLE_BLSCFG true
+
+# Plymouth
+set_grub_default GRUB_CMDLINE_LINUX_DEFAULT '"quiet splash"'
+set_grub_default GRUB_GFXPAYLOAD_LINUX keep
+
+# grub 2.06 and later skip 30_os-prober entirely unless this is false.
+set_grub_default GRUB_DISABLE_OS_PROBER false
+
+# os-prober also reports the system we just installed, since anaconda has the
+# target root mounted while this runs. Drop our own device from the results.
+self_dev="$(findmnt -no SOURCE / 2>/dev/null || true)"
+self_dev="${self_dev%%[*}"
+other_os="$(os-prober 2>/dev/null || true)"
+if [[ -n "$self_dev" && -n "$other_os" ]]; then
+    other_os="$(grep -v "^${self_dev}:" <<<"$other_os" || true)"
+fi
+
+# Boot straight through on a single OS machine, but show a real menu when something else is installed so it can actually be selected.
+if [[ -n "$other_os" ]]; then
+    echo "Other operating systems detected, enabling the GRUB menu:"
+    echo "$other_os"
+    set_grub_default GRUB_TIMEOUT 5
+    set_grub_default GRUB_TIMEOUT_STYLE menu
+    # menu_auto_hide comes from the anaconda profile and would hide the menu
+    # again regardless of the timeout.
+    for grubenv in /boot/grub2/grubenv /boot/efi/EFI/fedora/grubenv; do
+        if [[ -f "$grubenv" ]]; then
+            grub2-editenv "$grubenv" unset menu_auto_hide || true
+        fi
+    done
+else
+    set_grub_default GRUB_TIMEOUT 0
+    set_grub_default GRUB_TIMEOUT_STYLE hidden
+fi
+
+# The kernel cmdline itself comes from the BLS entries on an ostree system, so quiet splash is applied via bootloader append in the kickstart.
+grub_cfg="/boot/grub2/grub.cfg"
+if [[ ! -f "$grub_cfg" ]]; then
+    grub_cfg="/boot/efi/EFI/fedora/grub.cfg"
+fi
+grub2-mkconfig -o "$grub_cfg" || true
 %end
 EOF
 

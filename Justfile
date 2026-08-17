@@ -133,6 +133,23 @@ build-iso image="blossomos" tag="main" flavor="main":
     sed -i 's/systemd-detect-virt -c || true/echo none/g' "${titanoboa_dir}/Justfile"
 
     repo_dir="$(pwd)"
+
+    # Stage a locally built anaconda-webui RPM into the titanoboa checkout, which is
+    # bind-mounted at /app inside the rootfs chroot — that is the only way the
+    # post-rootfs hook can reach a file from the host. Set ANACONDA_WEBUI_RPM to point
+    # at one explicitly; otherwise the newest build from a sibling anaconda-webui
+    # checkout is used. With neither, the hook installs Fedora's anaconda-webui.
+    rm -f "${titanoboa_dir}"/anaconda-webui-*.rpm
+    webui_rpm="${ANACONDA_WEBUI_RPM:-$(ls -1t "${repo_dir}"/webui/anaconda-webui-*.rpm 2>/dev/null | head -n1 || true)}"
+    if [[ -n "${webui_rpm}" ]]; then
+        if [[ ! -f "${webui_rpm}" ]]; then
+            echo "ANACONDA_WEBUI_RPM does not exist: ${webui_rpm}" >&2
+            exit 1
+        fi
+        echo "Staging anaconda-webui RPM: ${webui_rpm}"
+        cp "${webui_rpm}" "${titanoboa_dir}/"
+    fi
+
     pushd "${titanoboa_dir}"
 
     ${SUDOIF} env \
