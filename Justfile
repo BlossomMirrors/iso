@@ -132,6 +132,14 @@ build-iso image="blossomos" tag="main" flavor="main":
     sed -i 's/ Live ISO//g' "${titanoboa_dir}/src/grub.cfg.tmpl"
     sed -i 's/systemd-detect-virt -c || true/echo none/g' "${titanoboa_dir}/Justfile"
 
+    # just 1.57 moved which(), logical operators and list literals from `set unstable`
+    # to their own `set lists` gate, which older just versions reject as unknown.
+    just_version="$({{ just }} --version | awk '{print $2}')"
+    if [[ "$(printf '1.57.0\n%s\n' "${just_version}" | sort -V | head -n1)" == "1.57.0" ]]; then
+        grep -q '^set lists' "${titanoboa_dir}/Justfile" \
+            || sed -i '/^set unstable/a set lists := true' "${titanoboa_dir}/Justfile"
+    fi
+
     repo_dir="$(pwd)"
 
     # Stage a locally built anaconda-webui RPM into the titanoboa checkout, which is
