@@ -132,6 +132,25 @@ build-iso image="blossomos" tag="main" flavor="main":
     sed -i 's/ Live ISO//g' "${titanoboa_dir}/src/grub.cfg.tmpl"
     sed -i 's/systemd-detect-virt -c || true/echo none/g' "${titanoboa_dir}/Justfile"
 
+    # The builder container gets a tmpfs /dev with the host device nodes bind mounted
+    # in one by one, so a loop device the kernel allocates mid build never appears
+    # inside it and both `mount` calls in the iso recipe fail. Replace them with
+    # xorriso extraction and mtools, neither of which needs a loop device.
+    sed -i \
+        -e 's|mount \$ISOROOT/\.\./efiboot\.img \$EFI_BOOT_MOUNT|xorriso -osirrox on -indev $ISOROOT/../efiboot.img -extract /boot/grub $EFI_BOOT_MOUNT/grub|' \
+        -e 's|cp -r \$EFI_BOOT_MOUNT/boot/grub \$ISOROOT/boot/|cp -r $EFI_BOOT_MOUNT/grub $ISOROOT/boot/|' \
+        -e '/umount \$EFI_BOOT_MOUNT/d' \
+        -e 's|mount \$WORKDIR/efiboot\.img \$EFI_BOOT_PART|mmd -i $WORKDIR/efiboot.img ::/EFI ::/EFI/BOOT|' \
+        -e 's|cp -dRvf \$ISOROOT/EFI/BOOT/\. \$EFI_BOOT_PART/EFI/BOOT|mcopy -s -i $WORKDIR/efiboot.img $ISOROOT/EFI/BOOT/* ::/EFI/BOOT/|' \
+        -e '/EFI_BOOT_PART=\$(mktemp -d)/d' \
+        -e '/mkdir -p \$EFI_BOOT_PART\/EFI\/BOOT/d' \
+        -e '/umount \$EFI_BOOT_PART/d' \
+        -e 's/xorriso shim dosfstools mtools/xorriso shim dosfstools/' \
+        -e 's/xorriso shim dosfstools/xorriso shim dosfstools mtools/' \
+        -e '/^        mtools$/d' \
+        -e 's/^        dosfstools$/        dosfstools\n        mtools/' \
+        "${titanoboa_dir}/Justfile"
+
     # just 1.57 moved which(), logical operators and list literals from `set unstable`
     # to their own `set lists` gate, which older just versions reject as unknown.
     just_version="$({{ just }} --version | awk '{print $2}')"
