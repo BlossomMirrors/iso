@@ -1,5 +1,6 @@
 # Build artifacts
 output/
+vm/
 *.iso
 *.iso-CHECKSUM
 *_build*

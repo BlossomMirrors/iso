@@ -47,7 +47,8 @@ fix:
 clean:
     #!/usr/bin/bash
     set -eoux pipefail
-    rm -rf output/
+    ${SUDOIF} rm -rf output/
+    rm -rf vm/
     rm -f *.iso*
     rm -f flatpaks.list
 
@@ -113,6 +114,7 @@ build-iso image="blossomos" tag="main" flavor="main":
         image_tag="{{ tag }}-nvidia"
     fi
 
+    ${SUDOIF} rm -rf output
     mkdir -p output
 
     # Generate flatpak list (Flathub-only; custom-remote packages excluded by generate-flatpak-list)
@@ -200,6 +202,96 @@ build-iso image="blossomos" tag="main" flavor="main":
 
     echo "Built: output/${iso_name}"
     cat "output/isodata{{ if flavor == 'main' { '' } else { '-' + flavor } }}.json"
+
+# Boot the built ISO in QEMU (UEFI, sound, networking, installable disk)
+[group('ISO')]
+run-vm iso="" disk="vm/blossomos.qcow2" size="50G" memory="8G" cpus="4":
+    #!/usr/bin/bash
+    set -eou pipefail
+
+    for cmd in qemu-system-x86_64 qemu-img; do
+        if ! command -v "${cmd}" >/dev/null 2>&1; then
+            echo "ERROR: ${cmd} not found, install qemu-system-x86 and qemu-img"
+            exit 1
+        fi
+    done
+
+    iso="{{ iso }}"
+    if [[ -z "${iso}" ]]; then
+        iso=$(ls -1t output/*.iso 2>/dev/null | head -n1 || true)
+    fi
+    if [[ -z "${iso}" || ! -f "${iso}" ]]; then
+        echo "ERROR: no ISO found, run 'just build-iso' first or pass iso=path/to.iso"
+        exit 1
+    fi
+
+    ovmf_code=""
+    for candidate in \
+        /usr/share/edk2/ovmf/OVMF_CODE.fd \
+        /usr/share/OVMF/OVMF_CODE.fd \
+        /usr/share/edk2-ovmf/x64/OVMF_CODE.fd \
+        /usr/share/qemu/ovmf-x86_64-code.bin; do
+        if [[ -f "${candidate}" ]]; then
+            ovmf_code="${candidate}"
+            break
+        fi
+    done
+    if [[ -z "${ovmf_code}" ]]; then
+        echo "ERROR: no OVMF firmware found, install edk2-ovmf"
+        exit 1
+    fi
+    ovmf_vars_src="${ovmf_code//OVMF_CODE/OVMF_VARS}"
+    ovmf_vars_src="${ovmf_vars_src//ovmf-x86_64-code.bin/ovmf-x86_64-vars.bin}"
+
+    disk="{{ disk }}"
+    mkdir -p "$(dirname "${disk}")"
+    # qcow2 grows on demand, so {{ size }} is only the maximum the guest sees
+    if [[ ! -f "${disk}" ]]; then
+        qemu-img create -f qcow2 "${disk}" "{{ size }}"
+    fi
+
+    vars="$(dirname "${disk}")/OVMF_VARS.fd"
+    if [[ ! -f "${vars}" ]]; then
+        cp "${ovmf_vars_src}" "${vars}"
+        chmod u+w "${vars}"
+    fi
+
+    audiodev="none"
+    for backend in pipewire pa alsa sdl; do
+        if qemu-system-x86_64 -audiodev help 2>/dev/null | grep -qx "${backend}"; then
+            audiodev="${backend}"
+            break
+        fi
+    done
+
+    accel=(-machine "q35,smm=off")
+    if [[ -w /dev/kvm ]]; then
+        accel+=(-enable-kvm -cpu host)
+    else
+        echo "NOTICE: /dev/kvm not writable, falling back to TCG emulation"
+        accel+=(-cpu max)
+    fi
+
+    exec qemu-system-x86_64 \
+        "${accel[@]}" \
+        -m "{{ memory }}" \
+        -smp "{{ cpus }}" \
+        -drive "if=pflash,format=raw,readonly=on,file=${ovmf_code}" \
+        -drive "if=pflash,format=raw,file=${vars}" \
+        -drive "file=${disk},if=virtio,format=qcow2,cache=writeback,discard=unmap" \
+        -drive "file=${iso},media=cdrom,readonly=on" \
+        -boot order=dc,menu=on \
+        -netdev user,id=net0 \
+        -device virtio-net-pci,netdev=net0 \
+        -audiodev "${audiodev},id=snd0" \
+        -device intel-hda \
+        -device hda-duplex,audiodev=snd0 \
+        -device virtio-vga-gl \
+        -display gtk,gl=on,show-cursor=on \
+        -device qemu-xhci \
+        -device usb-tablet \
+        -device virtio-rng-pci \
+        -name "BlossomOS $(basename "${iso}")"
 
 # Upload built ISO and isodata.json to Cloudflare R2 (EU) via rclone
 # Requires R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_ENDPOINT and R2_BUCKET env vars
