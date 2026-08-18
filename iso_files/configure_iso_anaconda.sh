@@ -107,6 +107,20 @@ localectl set-x11-keymap us 2>/dev/null || true
 EOF
 chmod +x /var/lib/livesys/livesys-session-extra.d/90-installer-session.sh
 
+# Autostart the installer when the live session starts, instead of relying
+# on the user to click the "Install to Hard Drive" desktop icon that
+# liveinst-setup.desktop (from anaconda-live) creates. liveinst re-execs
+# itself via pkexec, which the 00-live-installer.rules polkit rule above
+# lets through without a password prompt.
+mkdir -p /etc/xdg/autostart
+tee /etc/xdg/autostart/blossomos-liveinst-autostart.desktop <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=Install BlossomOS
+Exec=/usr/bin/liveinst
+NoDisplay=true
+EOF
+
 # Set hostname
 echo "blossomos" | tee /etc/hostname
 
