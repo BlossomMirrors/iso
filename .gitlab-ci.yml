@@ -17,7 +17,7 @@ build-upload-main:
   tags:
     - bigboi-docker-priv
   script:
-    - just build-iso blossomos main main
+    - just build-iso blossomos main main 0 0
     - just upload-r2 main
 
 build-upload-nvidia-open:
@@ -26,5 +26,23 @@ build-upload-nvidia-open:
   tags:
     - bigboi-docker-priv
   script:
-    - just build-iso blossomos main nvidia-open
+    - just build-iso blossomos main nvidia-open 0 0
     - just upload-r2 nvidia-open
+
+build-upload-nvidia-legacy:
+  stage: build-upload
+  image: ghcr.io/ublue-os/devcontainer:latest
+  tags:
+    - bigboi-docker-priv
+  script:
+    - just build-iso blossomos main nvidia-legacy 0 0
+    - just upload-r2 nvidia-legacy
+
+build-upload-netinstall:
+  stage: build-upload
+  image: ghcr.io/ublue-os/devcontainer:latest
+  tags:
+    - bigboi-docker-priv
+  script:
+    - just build-iso blossomos main main 0 1
+    - just upload-r2 netinstall

@@ -134,3 +134,48 @@ if [[ -f /usr/sbin/restorecon.bak ]] || [[ -x /usr/sbin/restorecon.real ]]; then
 elif [[ -f /usr/sbin/restorecon ]] && ! grep -q '#!/bin/bash' /usr/sbin/restorecon 2>/dev/null; then
     mv /usr/sbin/restorecon /usr/sbin/restorecon.bak || true
 fi
+
+NETINSTALL=1
+if [[ -f /app/.blossomos-netinstall ]]; then
+    NETINSTALL="$(cat /app/.blossomos-netinstall)"
+fi
+
+if [[ "$NETINSTALL" == "1" ]]; then
+    # dracut runs right after this hook and only picks up plymouth if it's
+    # already present in the rootfs at that point, so this has to happen
+    # here rather than in the post-rootfs hook (configure_iso_anaconda.sh).
+    # blossomos-branding also replaces /etc/os-release with the real
+    # BlossomOS branding (see ../identity), which the post-rootfs hook's
+    # pre-release banner check reads.
+    rpm --import https://repo.blossomos.org/BLOSSOMOS-GPG-KEY.pub
+    tee /etc/yum.repos.d/blossom.repo <<'EOF'
+[blossomos-main]
+name=BlossomOS Main
+baseurl=https://repo.blossomos.org/rpm/
+enabled=0
+gpgcheck=1
+gpgkey=https://repo.blossomos.org/BLOSSOMOS-GPG-KEY.pub
+EOF
+    # Only present on this minimal base, not on the full image this package
+    # normally installs onto; it owns /etc/issue.d, which blossomos-branding
+    # obsoleting fedora-release-common would otherwise leave dangling.
+    dnf remove -y console-login-helper-messages-issuegen || true
+    dnf install -y --setopt=install_weak_deps=False --enablerepo=blossomos-main \
+        plymouth-theme-spinner blossomos-branding
+    plymouth-set-default-theme spinner
+    # blossomos-branding installs /etc/os-release as a real file rather than
+    # the usual symlink to /usr/lib/os-release, so anything reading the
+    # latter directly (titanoboa's grub template, for the boot menu entry)
+    # would otherwise still see the stale fedora-bootc branding.
+    cp /etc/os-release /usr/lib/os-release
+    # blossomos-branding's PRETTY_NAME ("BlossomOS Alpha 2") names a specific
+    # release, but netinstall doesn't embed one — the actual flavor/tag is
+    # only decided over the network at install time, and stays whatever the
+    # registry currently serves rather than tracking this build. Drop the
+    # version suffix so the label doesn't go stale.
+    sed -i \
+        -e 's/^NAME=.*/NAME="BlossomOS"/' \
+        -e 's/^PRETTY_NAME=.*/PRETTY_NAME="BlossomOS"/' \
+        /etc/os-release /usr/lib/os-release
+    rm -f /etc/yum.repos.d/blossom.repo
+fi

@@ -5,6 +5,7 @@ images := '(
 flavors := '(
     [main]=main
     [nvidia-open]=nvidia-open
+    [nvidia-legacy]=nvidia-legacy
 )'
 tags := '(
     [stable]=stable
@@ -98,22 +99,46 @@ image_name image="blossomos" tag="stable" flavor="main":
     fi
     echo "${image_name}"
 
-# Build ISO using Titanoboa
-# live=0 (default) skips the live desktop session (livesys-scripts) and boots
-# straight to the Anaconda WebUI installer. Pass live=1 to build a live ISO instead.
 [group('ISO')]
-build-iso image="blossomos" tag="main" flavor="main" live="0":
+build-iso image="blossomos" tag="main" flavor="main" live="0" netinstall="1":
     #!/usr/bin/bash
     set -eoux pipefail
 
     {{ just }} validate "{{ image }}" "{{ tag }}" "{{ flavor }}"
 
-    if [[ "{{ flavor }}" == "main" ]]; then
-        iso_name="BlossomOS-$(date +%Y.%m.%d)-x86_64.iso"
-        image_tag="{{ tag }}"
+    image_tag="{{ tag }}"
+    name_suffix=""
+    # flavor only picks a target when netinstall=0 (offline, image embedded
+    # at build time); netinstall=1 always builds one flavor-independent ISO
+    # since the target is decided by hardware detection at install time.
+    # name_suffix distinguishes output filenames between the two (also fixes
+    # a real collision: an offline flavor=main build and a netinstall build
+    # would otherwise both produce BlossomOS-DATE-x86_64.iso/isodata.json).
+    if [[ "{{ netinstall }}" == "0" ]]; then
+        case "{{ flavor }}" in
+            nvidia-open)
+                name_suffix="{{ flavor }}"
+                image_tag="{{ tag }}-nvidia"
+                ;;
+            nvidia-legacy)
+                name_suffix="{{ flavor }}"
+                image_tag="{{ tag }}-nvidia-legacy"
+                ;;
+        esac
     else
-        iso_name="BlossomOS-{{ flavor }}-$(date +%Y.%m.%d)-x86_64.iso"
-        image_tag="{{ tag }}-nvidia"
+        name_suffix="netinstall"
+    fi
+    iso_name="BlossomOS-$(date +%Y.%m.%d)-x86_64.iso"
+    if [[ -n "$name_suffix" ]]; then
+        iso_name="BlossomOS-${name_suffix}-$(date +%Y.%m.%d)-x86_64.iso"
+    fi
+
+    # netinstall=1 boots a minimal generic base to render the installer —
+    # it never needs GPU-specific drivers, so it doesn't need the full
+    # flavor-specific BlossomOS image as its rootfs either.
+    rootfs_image="registry.blossomos.org/blossom/image:${image_tag}"
+    if [[ "{{ netinstall }}" == "1" ]]; then
+        rootfs_image="quay.io/fedora/fedora-bootc:44"
     fi
 
     ${SUDOIF} rm -rf output
@@ -181,16 +206,37 @@ build-iso image="blossomos" tag="main" flavor="main" live="0":
         cp "${webui_rpm}" "${titanoboa_dir}/"
     fi
 
+    # Marker for the post-rootfs hook: env vars set here don't propagate into
+    # the chroot the hook runs in, but this dir is bind-mounted at /app there
+    # (same trick as the anaconda-webui RPM staging above).
+    rm -f "${titanoboa_dir}/.blossomos-live" "${titanoboa_dir}/.blossomos-netinstall" "${titanoboa_dir}/.blossomos-image-tag" "${titanoboa_dir}/.blossomos-flatpaks-list"
+    echo "{{ live }}" > "${titanoboa_dir}/.blossomos-live"
+    echo "{{ netinstall }}" > "${titanoboa_dir}/.blossomos-netinstall"
+    echo "${image_tag}" > "${titanoboa_dir}/.blossomos-image-tag"
+    # rootfs-include-flatpaks is skipped for a non-live netinstall build (see
+    # titanoboa), so the hook installs flatpaks itself at install time instead
+    # and needs the package list staged the same way as the other markers.
+    cp "${repo_dir}/flatpaks.list" "${titanoboa_dir}/.blossomos-flatpaks-list"
+
+    extra_kargs="NONE"
+    if [[ "{{ live }}" == "0" ]]; then
+        extra_kargs="systemd.unit=anaconda.target"
+    fi
+
     pushd "${titanoboa_dir}"
 
     ${SUDOIF} env \
         HOOK_post_rootfs="${repo_dir}/iso_files/configure_iso_anaconda.sh" \
         HOOK_pre_initramfs="${repo_dir}/iso_files/pre_initramfs.sh" \
-        BLOSSOMOS_IMAGE_TAG="${image_tag}" \
         just build \
-        "registry.blossomos.org/blossom/image:${image_tag}" \
+        "${rootfs_image}" \
         "{{ live }}" \
-        "${repo_dir}/flatpaks.list"
+        "${repo_dir}/flatpaks.list" \
+        "squashfs" \
+        "${extra_kargs}" \
+        "registry.blossomos.org/blossom/image:${image_tag}" \
+        "1" \
+        "{{ netinstall }}"
 
     popd
 
@@ -198,12 +244,16 @@ build-iso image="blossomos" tag="main" flavor="main" live="0":
     ${SUDOIF} chown "$(id -u):$(id -g)" "output/${iso_name}"
 
     # Generate sha256 checksum and isodata.json
+    isodata_file="output/isodata.json"
+    if [[ -n "$name_suffix" ]]; then
+        isodata_file="output/isodata-${name_suffix}.json"
+    fi
     sha256=$(sha256sum "output/${iso_name}" | awk '{print $1}')
     printf '{\n  "name": "%s",\n  "sha256": "%s"\n}\n' "${iso_name}" "${sha256}" \
-        > "output/isodata{{ if flavor == 'main' { '' } else { '-' + flavor } }}.json"
+        > "${isodata_file}"
 
     echo "Built: output/${iso_name}"
-    cat "output/isodata{{ if flavor == 'main' { '' } else { '-' + flavor } }}.json"
+    cat "${isodata_file}"
 
 # Boot the built ISO in QEMU (UEFI, sound, networking, installable disk)
 [group('ISO')]
