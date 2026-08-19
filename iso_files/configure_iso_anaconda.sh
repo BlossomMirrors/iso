@@ -363,17 +363,35 @@ fi
 
 # netinstall=1 boots a flavor-independent minimal image (no GPU drivers
 # baked in), so the actual flavor to install is decided at install time by
-# probing the target machine's GPU instead of at build time. This %pre
-# section runs on the live installer environment before storage is even
-# set up, so it stashes its result in /tmp (shared for the whole kickstart
-# run) rather than under /mnt/sysimage. The legacy table below is every
-# Maxwell/Pascal/Volta NVIDIA device ID (negativo17's proprietary "580"
-# driver branch is the last to support them; upstream open kernel modules
-# only cover Turing and later), hand-built from /usr/share/hwdata/pci.ids.
+# probing the target machine's GPU instead of at build time.
+#
+# This can NOT be done with a %pre/%pre-install section writing a file for
+# a later %include in the same kickstart, even though that's a commonly
+# documented pattern elsewhere: anaconda parses interactive-defaults.ks as
+# one upfront pass — %include is resolved textually as part of that parse,
+# entirely before any %pre/%pre-install section has actually run (confirmed
+# via anaconda.log: "Parsing kickstart" fails immediately with the %include
+# target missing, before any section-execution log line appears at all).
+#
+# Instead, resolve the image tag before anaconda ever touches the kickstart
+# file: a oneshot systemd service (Before=anaconda.target, same ordering
+# anaconda-core's own anaconda-pre.service uses) runs the GPU detection and
+# sed-substitutes the real tag into a plain static placeholder in both
+# interactive-defaults.ks and install-configure-upgrade.ks. Anaconda only
+# ever sees already-resolved, static kickstart text.
+#
+# The legacy table below is every Maxwell/Pascal/Volta NVIDIA device ID
+# (negativo17's proprietary "580" driver branch is the last to support
+# them; upstream open kernel modules only cover Turing and later),
+# hand-built from /usr/share/hwdata/pci.ids.
 OSTREE_DIRECTIVE="ostreecontainer --url=$IMAGE_REF --transport=$OSTREE_TRANSPORT --no-signature-verification"
 if [[ "$NETINSTALL" == "1" ]]; then
-    OSTREE_DIRECTIVE="$(cat <<'PREEOF'
-%pre --erroronfail
+    OSTREE_DIRECTIVE="ostreecontainer --url=registry.blossomos.org/blossom/image:__BLOSSOMOS_TAG__ --transport=registry --no-signature-verification"
+
+    mkdir -p /usr/libexec/anaconda
+    tee /usr/libexec/anaconda/blossomos-resolve-flavor <<'PREEOF'
+#!/usr/bin/bash
+set -euo pipefail
 declare -A blossomos_legacy_nvidia=(
         ["1340"]=1 ["1341"]=1 ["1344"]=1 ["1346"]=1 ["1347"]=1 ["1348"]=1
         ["1349"]=1 ["134b"]=1 ["134d"]=1 ["134e"]=1 ["134f"]=1 ["137a"]=1
@@ -422,14 +440,32 @@ for id in $(lspci -d 10de: -n 2>/dev/null | awk '{print $3}' | cut -d: -f2); do
         suffix="-nvidia"
     fi
 done
-echo "__BASE_TAG__${suffix}" > /tmp/blossomos-final-tag
-echo "ostreecontainer --url=registry.blossomos.org/blossom/image:__BASE_TAG__${suffix} --transport=registry --no-signature-verification" > /tmp/blossomos-ostreecontainer.ks
-%end
-
-%include /tmp/blossomos-ostreecontainer.ks
+final_tag="__BASE_TAG__${suffix}"
+sed -i "s|__BLOSSOMOS_TAG__|${final_tag}|" \
+    /usr/share/anaconda/interactive-defaults.ks \
+    /usr/share/anaconda/post-scripts/install-configure-upgrade.ks
 PREEOF
-)"
-    OSTREE_DIRECTIVE="${OSTREE_DIRECTIVE//__BASE_TAG__/$IMAGE_TAG}"
+    chmod +x /usr/libexec/anaconda/blossomos-resolve-flavor
+    sed -i "s/__BASE_TAG__/$IMAGE_TAG/" /usr/libexec/anaconda/blossomos-resolve-flavor
+
+    tee /usr/lib/systemd/system/blossomos-resolve-flavor.service <<'EOF'
+[Unit]
+Description=Resolve the BlossomOS netinstall image tag from detected hardware
+Requires=basic.target
+After=basic.target
+Before=anaconda.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/anaconda/blossomos-resolve-flavor
+RemainAfterExit=yes
+EOF
+
+    mkdir -p /usr/lib/systemd/system/anaconda.target.d
+    tee /usr/lib/systemd/system/anaconda.target.d/blossomos-resolve-flavor.conf <<'EOF'
+[Unit]
+Wants=blossomos-resolve-flavor.service
+EOF
 fi
 
 tee -a /usr/share/anaconda/interactive-defaults.ks <<EOF
@@ -448,15 +484,11 @@ bootloader --append="quiet splash"
 EOF
 
 if [[ "$NETINSTALL" == "1" ]]; then
-    # The flavor was only decided at install time (see the %pre block
-    # above), so pick up its result from /tmp instead of the build-time
-    # $IMAGE_REF. --nochroot keeps this script in the live installer
-    # environment (where /tmp/blossomos-final-tag lives) while still
-    # switching the freshly-installed target root at /mnt/sysimage.
+    # __BLOSSOMOS_TAG__ is resolved by blossomos-resolve-flavor.service
+    # before anaconda ever parses this file (see the comment further up).
     tee /usr/share/anaconda/post-scripts/install-configure-upgrade.ks <<'EOF'
-%post --erroronfail --nochroot
-final_tag="$(cat /tmp/blossomos-final-tag)"
-chroot /mnt/sysimage bootc switch --mutate-in-place --transport registry "registry.blossomos.org/blossom/image:${final_tag}"
+%post --erroronfail
+bootc switch --mutate-in-place --transport registry registry.blossomos.org/blossom/image:__BLOSSOMOS_TAG__
 %end
 EOF
 else
