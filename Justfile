@@ -99,8 +99,10 @@ image_name image="blossomos" tag="stable" flavor="main":
     echo "${image_name}"
 
 # Build ISO using Titanoboa
+# live=0 (default) skips the live desktop session (livesys-scripts) and boots
+# straight to the Anaconda WebUI installer. Pass live=1 to build a live ISO instead.
 [group('ISO')]
-build-iso image="blossomos" tag="main" flavor="main":
+build-iso image="blossomos" tag="main" flavor="main" live="0":
     #!/usr/bin/bash
     set -eoux pipefail
 
@@ -187,7 +189,7 @@ build-iso image="blossomos" tag="main" flavor="main":
         BLOSSOMOS_IMAGE_TAG="${image_tag}" \
         just build \
         "registry.blossomos.org/blossom/image:${image_tag}" \
-        1 \
+        "{{ live }}" \
         "${repo_dir}/flatpaks.list"
 
     popd
