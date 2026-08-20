@@ -86,7 +86,7 @@ if [[ "$NETINSTALL" == "1" ]]; then
         # (core/image build_files/base/packages.dnf) plus Arabic.
         "google-noto-sans-cjk-fonts" "google-noto-sans-arabic-fonts"
         "google-noto-sans-balinese-fonts" "google-noto-sans-javanese-fonts"
-        "google-noto-sans-sundanese-fonts"
+        "google-noto-sans-sundanese-fonts" "google-noto-emoji-fonts"
     )
 fi
 
@@ -185,12 +185,24 @@ sed -i 's|^set -eu$|set -u|' /usr/libexec/anaconda/webui-desktop
 sed -i 's|DISPLAY=\$DISPLAY|DISPLAY="${DISPLAY:-}"|g' /usr/libexec/anaconda/webui-desktop
 sed -i '2a exec 2>>/tmp/webui-desktop-debug.log\nset -x' /usr/libexec/anaconda/webui-desktop
 
+if [[ "$LIVE_SESSION" == "0" ]]; then
+    # Upstream launches Firefox as a normal window (address bar, tabs, window
+    # controls) — on gnome-kiosk there's no desktop around it, so moving the
+    # mouse to the top just reveals a title bar the user can accidentally hit
+    # close on. --kiosk removes all of that for a true fullscreen installer.
+    sed -i 's|--new-instance --profile|--new-instance --kiosk --profile|' /usr/libexec/anaconda/webui-desktop
+fi
+
 rm /usr/share/applications/org.mozilla.firefox.desktop
 
 for theme in default live extlink; do
     theme_js="/usr/share/anaconda/firefox-theme/${theme}/user.js"
     if [[ -f "$theme_js" ]]; then
         echo 'user_pref("browser.translations.enable", false);' >> "$theme_js"
+        # Right-click's context menu offers reload/back/view-source/inspect —
+        # none of it useful in the installer, all of it a way to get stuck
+        # or navigate away from it.
+        echo 'user_pref("dom.event.contextmenu.enabled", false);' >> "$theme_js"
     fi
 done
 
@@ -506,29 +518,28 @@ systemctl disable flatpak-add-fedora-repos.service
 EOF
 
 if [[ "$NETINSTALL" == "1" && "$LIVE_SESSION" == "0" ]]; then
-    # No pre-staged /var/lib/flatpak_original to rsync (see the block above) —
-    # install straight onto the target instead, once it's the real BlossomOS
-    # image (this runs after install-configure-upgrade.ks's bootc switch,
-    # per the %include order below) and already has network from the netinstall
-    # pull itself.
-    flathub_packages=""
-    if [[ -f /app/.blossomos-flatpaks-list ]]; then
-        flathub_packages="$(grep -v '^#' /app/.blossomos-flatpaks-list | sort --reverse | tr '\n' ' ')"
-    fi
-    tee /usr/share/anaconda/post-scripts/install-flatpaks.ks <<EOF
+    tee /usr/share/anaconda/post-scripts/install-flatpaks.ks <<'EOF'
 %post --erroronfail
-flatpak remote-add --system --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-for pkg in $flathub_packages; do
-    flatpak remote-info --arch=x86_64 --system flathub "\$pkg" &>/dev/null && flatpak install --system --noninteractive -y "\$pkg"
-done
-true
-
-flatpak remote-add --system --if-not-exists blossomos https://forge.arcstore.net/flatpak.flatpakrepo
-flatpak install --system --noninteractive -y blossomos \\
-    net.imput.helium \\
-    runtime/org.kde.KStyle.BlossomUI/x86_64/6.9 \\
-    runtime/org.kde.KStyle.BlossomUI/x86_64/5.15-24.08 \\
-    || true
+systemd-tmpfiles --create
+flatpak preinstall --system -y --noninteractive
+curl -fsSL https://repo.blossomos.org/BLOSSOMOS-GPG-KEY.pub -o /tmp/flatpak-repo-key.asc
+flatpak remote-add --system --if-not-exists \
+    --gpg-import=/tmp/flatpak-repo-key.asc \
+    blossomos https://forge.arcstore.net/flatpak
+rm -f /tmp/flatpak-repo-key.asc
+flatpak update -y
+flatpak update --appstream
+sync
+sleep 3
+flatpak install --system -y --noninteractive blossomos \
+    org.freedesktop.Platform.Icontheme.BlossomUI \
+    org.gtk.Gtk3theme.BlossomUI \
+    org.kde.KStyle.BlossomUI//5.15-24.08 \
+    org.kde.KStyle.BlossomUI//6.9 \
+    org.kde.KStyle.BlossomUI//6.10 \
+    org.kde.KStyle.BlossomUI//6.11
+flatpak install blossomos net.imput.helium -y --noninteractive
+sync
 %end
 EOF
 else

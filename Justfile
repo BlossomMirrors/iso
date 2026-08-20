@@ -209,14 +209,10 @@ build-iso image="blossomos" tag="main" flavor="main" live="0" netinstall="1":
     # Marker for the post-rootfs hook: env vars set here don't propagate into
     # the chroot the hook runs in, but this dir is bind-mounted at /app there
     # (same trick as the anaconda-webui RPM staging above).
-    rm -f "${titanoboa_dir}/.blossomos-live" "${titanoboa_dir}/.blossomos-netinstall" "${titanoboa_dir}/.blossomos-image-tag" "${titanoboa_dir}/.blossomos-flatpaks-list"
+    rm -f "${titanoboa_dir}/.blossomos-live" "${titanoboa_dir}/.blossomos-netinstall" "${titanoboa_dir}/.blossomos-image-tag"
     echo "{{ live }}" > "${titanoboa_dir}/.blossomos-live"
     echo "{{ netinstall }}" > "${titanoboa_dir}/.blossomos-netinstall"
     echo "${image_tag}" > "${titanoboa_dir}/.blossomos-image-tag"
-    # rootfs-include-flatpaks is skipped for a non-live netinstall build (see
-    # titanoboa), so the hook installs flatpaks itself at install time instead
-    # and needs the package list staged the same way as the other markers.
-    cp "${repo_dir}/flatpaks.list" "${titanoboa_dir}/.blossomos-flatpaks-list"
 
     extra_kargs="NONE"
     if [[ "{{ live }}" == "0" ]]; then
