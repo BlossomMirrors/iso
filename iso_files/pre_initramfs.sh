@@ -161,8 +161,8 @@ EOF
     # obsoleting fedora-release-common would otherwise leave dangling.
     dnf remove -y console-login-helper-messages-issuegen || true
     dnf install -y --setopt=install_weak_deps=False --enablerepo=blossomos-main \
-        plymouth-theme-spinner blossomos-branding
-    plymouth-set-default-theme spinner
+        blossom-plymouth-theme blossomos-branding
+    plymouth-set-default-theme blossom
     # blossomos-branding installs /etc/os-release as a real file rather than
     # the usual symlink to /usr/lib/os-release, so anything reading the
     # latter directly (titanoboa's grub template, for the boot menu entry)
