@@ -2,7 +2,13 @@
 
 set -eoux pipefail
 
-sbkey='https://github.com/ublue-os/akmods/raw/main/certs/public_key.der'
+# kernel-blossomos' vmlinuz is signed against this cert (see image repo's
+# build_files/base/02-install-common-kernel-akmods.sh), not ublue-os' akmods
+# key. A netinstall ISO's live rootfs is plain fedora-bootc and never has the
+# image's own /usr/share/blossomos/secureboot on it, so this is fetched the
+# same way generate-flatpak-list already pulls a static file straight out of
+# the image repo.
+sbkey='https://dev.blossomos.org/blossom/os/core/image/-/raw/main/secureboot.der'
 
 # The rootfs's own /usr/share/ublue-os/image-info.json can't tell us which
 # tag (stable/latest/beta/main, with or without an nvidia suffix) was
