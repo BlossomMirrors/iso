@@ -132,7 +132,7 @@ The custom BlossomOS profile includes:
 
 ### Secure Boot
 
-Secure boot is supported by default. After installation, users are prompted to enroll the secure boot key with password: `universalblue`
+Secure boot is supported by default. After installation, users are prompted to enroll the secure boot key with password: `blossomos`
 
 ### Custom OCI Image Source (netinstall)
 
