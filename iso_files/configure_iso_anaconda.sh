@@ -381,7 +381,12 @@ fi
 
 # netinstall=1 boots a flavor-independent minimal image (no GPU drivers
 # baked in), so the actual flavor to install is decided at install time by
-# probing the target machine's GPU instead of at build time.
+# probing the target machine's GPU instead of at build time. It also allows
+# overriding the image reference entirely via a blossomos.oci_url= kernel
+# arg (blossomos.oci_transport= for a non-default transport, e.g. when
+# PXE-booting against a locally hosted OCI registry instead of
+# registry.blossomos.org, see PXE.md) — GPU detection is skipped whenever
+# that override is present, since the caller is naming the exact image.
 #
 # This can NOT be done with a %pre/%pre-install section writing a file for
 # a later %include in the same kickstart, even though that's a commonly
@@ -391,12 +396,13 @@ fi
 # via anaconda.log: "Parsing kickstart" fails immediately with the %include
 # target missing, before any section-execution log line appears at all).
 #
-# Instead, resolve the image tag before anaconda ever touches the kickstart
-# file: a oneshot systemd service (Before=anaconda.target, same ordering
-# anaconda-core's own anaconda-pre.service uses) runs the GPU detection and
-# sed-substitutes the real tag into a plain static placeholder in both
-# interactive-defaults.ks and install-configure-upgrade.ks. Anaconda only
-# ever sees already-resolved, static kickstart text.
+# Instead, resolve the image reference before anaconda ever touches the
+# kickstart file: a oneshot systemd service (Before=anaconda.target, same
+# ordering anaconda-core's own anaconda-pre.service uses) runs the GPU
+# detection / kernel arg check and sed-substitutes the real values into
+# plain static placeholders in both interactive-defaults.ks and
+# install-configure-upgrade.ks. Anaconda only ever sees already-resolved,
+# static kickstart text.
 #
 # The legacy table below is every Maxwell/Pascal/Volta NVIDIA device ID
 # (negativo17's proprietary "580" driver branch is the last to support
@@ -404,7 +410,7 @@ fi
 # hand-built from /usr/share/hwdata/pci.ids.
 OSTREE_DIRECTIVE="ostreecontainer --url=$IMAGE_REF --transport=$OSTREE_TRANSPORT --no-signature-verification"
 if [[ "$NETINSTALL" == "1" ]]; then
-    OSTREE_DIRECTIVE="ostreecontainer --url=registry.blossomos.org/blossom/image:__BLOSSOMOS_TAG__ --transport=registry --no-signature-verification"
+    OSTREE_DIRECTIVE="ostreecontainer --url=__BLOSSOMOS_IMAGE_REF__ --transport=__BLOSSOMOS_TRANSPORT__ --no-signature-verification"
 
     mkdir -p /usr/libexec/anaconda
     tee /usr/libexec/anaconda/blossomos-resolve-flavor <<'PREEOF'
@@ -448,27 +454,44 @@ declare -A blossomos_legacy_nvidia=(
         ["1db6"]=1 ["1db7"]=1 ["1db8"]=1 ["1dba"]=1 ["1dbd"]=1 ["1dbe"]=1
         ["1dc1"]=1 ["1df0"]=1 ["1df2"]=1 ["1df4"]=1 ["1df5"]=1 ["1df6"]=1
 )
-suffix=""
-for id in $(lspci -d 10de: -n 2>/dev/null | awk '{print $3}' | cut -d: -f2); do
-    id="${id,,}"
-    if [[ -n "${blossomos_legacy_nvidia[$id]:-}" ]]; then
-        suffix="-nvidia-legacy"
-        break
-    elif [[ -z "$suffix" ]]; then
-        suffix="-nvidia"
-    fi
+override_url=""
+override_transport=""
+for arg in $(cat /proc/cmdline); do
+    case "$arg" in
+        blossomos.oci_url=*) override_url="${arg#blossomos.oci_url=}" ;;
+        blossomos.oci_transport=*) override_transport="${arg#blossomos.oci_transport=}" ;;
+    esac
 done
-final_tag="__BASE_TAG__${suffix}"
-sed -i "s|__BLOSSOMOS_TAG__|${final_tag}|" \
+
+if [[ -n "$override_url" ]]; then
+    final_image_ref="$override_url"
+else
+    suffix=""
+    for id in $(lspci -d 10de: -n 2>/dev/null | awk '{print $3}' | cut -d: -f2); do
+        id="${id,,}"
+        if [[ -n "${blossomos_legacy_nvidia[$id]:-}" ]]; then
+            suffix="-nvidia-legacy"
+            break
+        elif [[ -z "$suffix" ]]; then
+            suffix="-nvidia"
+        fi
+    done
+    final_image_ref="__BASE_IMAGE_REF__${suffix}"
+fi
+final_transport="${override_transport:-registry}"
+
+sed -i \
+    -e "s|__BLOSSOMOS_IMAGE_REF__|${final_image_ref}|" \
+    -e "s|__BLOSSOMOS_TRANSPORT__|${final_transport}|" \
     /usr/share/anaconda/interactive-defaults.ks \
     /usr/share/anaconda/post-scripts/install-configure-upgrade.ks
 PREEOF
     chmod +x /usr/libexec/anaconda/blossomos-resolve-flavor
-    sed -i "s/__BASE_TAG__/$IMAGE_TAG/" /usr/libexec/anaconda/blossomos-resolve-flavor
+    sed -i "s|__BASE_IMAGE_REF__|registry.blossomos.org/blossom/image:$IMAGE_TAG|" /usr/libexec/anaconda/blossomos-resolve-flavor
 
     tee /usr/lib/systemd/system/blossomos-resolve-flavor.service <<'EOF'
 [Unit]
-Description=Resolve the BlossomOS netinstall image tag from detected hardware
+Description=Resolve the BlossomOS netinstall image reference (detected hardware or blossomos.oci_url= override)
 Requires=basic.target
 After=basic.target
 Before=anaconda.target
@@ -502,11 +525,12 @@ bootloader --append="quiet splash"
 EOF
 
 if [[ "$NETINSTALL" == "1" ]]; then
-    # __BLOSSOMOS_TAG__ is resolved by blossomos-resolve-flavor.service
-    # before anaconda ever parses this file (see the comment further up).
+    # __BLOSSOMOS_IMAGE_REF__ and __BLOSSOMOS_TRANSPORT__ are resolved by
+    # blossomos-resolve-flavor.service before anaconda ever parses this file
+    # (see the comment further up).
     tee /usr/share/anaconda/post-scripts/install-configure-upgrade.ks <<'EOF'
 %post --erroronfail
-bootc switch --mutate-in-place --transport registry registry.blossomos.org/blossom/image:__BLOSSOMOS_TAG__
+bootc switch --mutate-in-place --transport __BLOSSOMOS_TRANSPORT__ __BLOSSOMOS_IMAGE_REF__
 %end
 EOF
 else

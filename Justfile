@@ -341,6 +341,81 @@ run-vm iso="" disk="vm/blossomos.qcow2" size="50G" memory="8G" cpus="4":
         -device virtio-rng-pci \
         -name "BlossomOS $(basename "${iso}")"
 
+# Extract PXE boot assets (vmlinuz, initramfs.img) from a built ISO and stage
+# the ISO itself for HTTP hosting, plus generate ready-to-edit iPXE scripts.
+# See PXE.md for how these get used to network-boot the ISO.
+[group('ISO')]
+extract-pxe iso="" outdir="output/pxe":
+    #!/usr/bin/bash
+    set -eou pipefail
+
+    for cmd in xorriso sha256sum; do
+        if ! command -v "${cmd}" >/dev/null 2>&1; then
+            echo "ERROR: ${cmd} not found"
+            exit 1
+        fi
+    done
+
+    iso="{{ iso }}"
+    if [[ -z "${iso}" ]]; then
+        iso=$(ls -1t output/*.iso 2>/dev/null | head -n1 || true)
+    fi
+    if [[ -z "${iso}" || ! -f "${iso}" ]]; then
+        echo "ERROR: no ISO found, run 'just build-iso' first or pass iso=path/to.iso"
+        exit 1
+    fi
+
+    outdir="{{ outdir }}"
+    mkdir -p "${outdir}"
+    iso_name="$(basename "${iso}")"
+
+    echo "Extracting boot files from ${iso_name}..."
+    rm -f "${outdir}/vmlinuz" "${outdir}/initramfs.img"
+    xorriso -osirrox on -indev "${iso}" \
+        -extract /boot/vmlinuz "${outdir}/vmlinuz" \
+        -extract /boot/initramfs.img "${outdir}/initramfs.img"
+
+    echo "Staging ${iso_name} for HTTP hosting..."
+    rm -f "${outdir}/${iso_name}"
+    ln "${iso}" "${outdir}/${iso_name}" 2>/dev/null || cp "${iso}" "${outdir}/${iso_name}"
+    sha256sum "${outdir}/${iso_name}" | awk '{print $1}' > "${outdir}/${iso_name}.sha256"
+
+    # Heredoc bodies stay indented to match Just's recipe-body indentation
+    # (a dedented line would end the recipe early); Just strips that shared
+    # indentation back out before handing the script to bash.
+    # Quoted delimiters keep iPXE's own ${next-server} syntax untouched by
+    # bash — an unquoted heredoc would parse it as parameter expansion with
+    # a default value (variable "next", default "server") instead.
+    cat <<'IPXEEOF' | sed "s|__ISO_NAME__|${iso_name}|" > "${outdir}/blossomos-sanboot.ipxe"
+    #!ipxe
+    # Simplest option: boot the ISO exactly as if from a USB/DVD drive, using
+    # its own embedded GRUB menu. No custom kernel args this way; see PXE.md
+    # if you need to pass blossomos.oci_url= for a custom OCI registry.
+    sanboot --no-describe http://${next-server}/__ISO_NAME__ || goto failed
+    :failed
+    echo Boot failed, dropping to iPXE shell
+    shell
+    IPXEEOF
+
+    cat <<'IPXEEOF' | sed "s|__ISO_NAME__|${iso_name}|" > "${outdir}/blossomos-custom.ipxe"
+    #!ipxe
+    # Full-control option: hook the ISO as a virtual CD (without booting it),
+    # then boot the extracted kernel/initrd directly so kernel args can be
+    # customized, e.g. blossomos.oci_url=registry.local:5000/blossom/image:main
+    # (see PXE.md). root=live:CDLABEL=blossomos then resolves against the
+    # just-hooked virtual CD, same as a physical install.
+    sanhook --no-describe http://${next-server}/__ISO_NAME__ || goto failed
+    kernel http://${next-server}/vmlinuz initrd=initramfs.img root=live:CDLABEL=blossomos enforcing=0 rd.live.image systemd.unit=anaconda.target quiet rhgb || goto failed
+    initrd http://${next-server}/initramfs.img || goto failed
+    boot || goto failed
+    :failed
+    echo Boot failed, dropping to iPXE shell
+    shell
+    IPXEEOF
+
+    echo "PXE assets written to ${outdir}/ (edit the .ipxe scripts' server address/path before use)"
+    ls -la "${outdir}"
+
 # Upload built ISO and isodata.json to Cloudflare R2 (EU) via rclone
 # Requires R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_ENDPOINT and R2_BUCKET env vars
 [group('ISO')]
