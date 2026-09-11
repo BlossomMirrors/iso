@@ -460,7 +460,7 @@ upload-r2 flavor="main":
 generate-flatpak-list:
     #!/usr/bin/bash
     set -eoux pipefail
-    curl -fsSL "https://dev.blossomos.org/blossom/os/core/image/-/raw/main/build_files/base/packages.flatpak" | \
+    curl -fsSL "https://dev.blossomos.org/blossom/os/core/image/-/raw/release/build_files/base/packages.flatpak" | \
         grep -v '^#\|^[[:space:]]*$' | \
         awk 'NF == 1 {print $1}' | \
         tee flatpaks.list

@@ -8,7 +8,7 @@ set -eoux pipefail
 # image's own /usr/share/blossomos/secureboot on it, so this is fetched the
 # same way generate-flatpak-list already pulls a static file straight out of
 # the image repo.
-sbkey='https://dev.blossomos.org/blossom/os/core/image/-/raw/main/secureboot.der'
+sbkey='https://dev.blossomos.org/blossom/os/core/image/-/raw/release/secureboot.der'
 
 # The rootfs's own /usr/share/ublue-os/image-info.json can't tell us which
 # tag (stable/latest/beta/main, with or without an nvidia suffix) was

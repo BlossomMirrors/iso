@@ -163,7 +163,7 @@ Contributions are welcome! Please follow these guidelines:
 
 - **Branding**: Update images in `iso_files/`
 - **Anaconda config**: Edit profile in `configure_iso_anaconda-webui.sh`
-- **Flatpak lists**: Modify [`build_files/base/packages.flatpak`](https://dev.blossomos.org/blossom/os/core/image/-/raw/main/build_files/base/packages.flatpak) in the image repo
+- **Flatpak lists**: Modify [`build_files/base/packages.flatpak`](https://dev.blossomos.org/blossom/os/core/image/-/raw/release/build_files/base/packages.flatpak) in the image repo
 - **Partitioning**: Modify `default_partitioning` in the Anaconda profile
 
 ## Documentation
