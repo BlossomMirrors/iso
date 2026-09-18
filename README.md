@@ -2,7 +2,7 @@
 
 [![pipeline status](https://dev.blossomos.org/blossom/os/iso/badges/main/pipeline.svg)](https://dev.blossomos.org/blossom/os/iso/-/commits/main)
 
-This repository builds bootable BlossomOS installation media using [Titanoboa](https://github.com/ublue-os/titanoboa) and the Anaconda installer with WebUI.
+This repository builds bootable BlossomOS installation media using [Titanoboa](https://dev.blossomos.org/blossom/os/titanoboa) and the Anaconda installer with WebUI.
 
 ## Overview
 
@@ -30,6 +30,7 @@ Pre-built ISOs are available at [blossomos.org](https://blossomos.org).
 │   └── scope_installer.png                 # Installer branding
 ├── .pre-commit-config.yaml                 # Pre-commit hooks
 ├── Justfile                                # Build automation recipes
+├── PXE.md                                  # PXE booting guide
 └── README.md                               # This file
 ```
 
@@ -84,6 +85,12 @@ just image_name blossomos stable main
 
 # Validate image/tag/flavor combination
 just validate blossomos stable nvidia-open
+
+# Boot the built ISO in QEMU
+just run-vm
+
+# Extract PXE boot assets from a built ISO (see PXE.md)
+just extract-pxe
 ```
 
 ## ISO Variants
@@ -125,7 +132,21 @@ The custom BlossomOS profile includes:
 
 ### Secure Boot
 
-Secure boot is supported by default. After installation, users are prompted to enroll the secure boot key with password: `universalblue`
+Secure boot is supported by default. After installation, users are prompted to enroll the secure boot key with password: `blossomos`
+
+### Custom OCI Image Source (netinstall)
+
+Netinstall ISOs fetch the OS image to install from `registry.blossomos.org`
+at install time. Pass `blossomos.oci_url=<registry>/<path>:<tag>` (and
+optionally `blossomos.oci_transport=`, default `registry`) on the kernel
+command line to install from a different OCI registry instead — for example
+a locally hosted mirror when [PXE booting](PXE.md). See
+[PXE.md](PXE.md#custom-oci-urls-blossomosoci_url) for details.
+
+## PXE Booting
+
+See [PXE.md](PXE.md) for network-booting an ISO instead of writing it to
+physical media, including how to use it with a custom OCI image source.
 
 ## Contributing
 
@@ -142,7 +163,7 @@ Contributions are welcome! Please follow these guidelines:
 
 - **Branding**: Update images in `iso_files/`
 - **Anaconda config**: Edit profile in `configure_iso_anaconda-webui.sh`
-- **Flatpak lists**: Modify [`build_files/base/packages.flatpak`](https://dev.blossomos.org/blossom/os/core/image/-/raw/main/build_files/base/packages.flatpak) in the image repo
+- **Flatpak lists**: Modify [`build_files/base/packages.flatpak`](https://dev.blossomos.org/blossom/os/core/image/-/raw/release/build_files/base/packages.flatpak) in the image repo
 - **Partitioning**: Modify `default_partitioning` in the Anaconda profile
 
 ## Documentation
