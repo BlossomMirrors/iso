@@ -180,12 +180,17 @@ build-iso image="blossomos" tag="main" flavor="main" live="0" netinstall="1":
         -e 's/^        dosfstools$/        dosfstools\n        mtools/' \
         "${titanoboa_dir}/Justfile"
 
-    # just 1.57 moved which(), logical operators and list literals from `set unstable`
-    # to their own `set lists` gate, which older just versions reject as unknown.
+    # Titanoboa's Justfile chains multiple comparisons with && (e.g.
+    # `if a == "1" && b == "0" { ... }`), a grammar construct just's parser only
+    # gained in 1.57; older just rejects it outright and no `set` directive works
+    # around that. Fetch a recent just for the nested Titanoboa build when the one
+    # on PATH is too old, instead of touching the system just.
+    titanoboa_just="{{ just }}"
     just_version="$({{ just }} --version | awk '{print $2}')"
-    if [[ "$(printf '1.57.0\n%s\n' "${just_version}" | sort -V | head -n1)" == "1.57.0" ]]; then
-        grep -q '^set lists' "${titanoboa_dir}/Justfile" \
-            || sed -i '/^set unstable/a set lists := true' "${titanoboa_dir}/Justfile"
+    if [[ "$(printf '1.57.0\n%s\n' "${just_version}" | sort -V | head -n1)" != "1.57.0" ]]; then
+        just_bin_dir="$(mktemp -d)"
+        curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | bash -s -- --to "${just_bin_dir}"
+        titanoboa_just="${just_bin_dir}/just"
     fi
 
     repo_dir="$(pwd)"
@@ -224,7 +229,7 @@ build-iso image="blossomos" tag="main" flavor="main" live="0" netinstall="1":
     ${SUDOIF} env \
         HOOK_post_rootfs="${repo_dir}/iso_files/configure_iso_anaconda.sh" \
         HOOK_pre_initramfs="${repo_dir}/iso_files/pre_initramfs.sh" \
-        just build \
+        "${titanoboa_just}" build \
         "${rootfs_image}" \
         "{{ live }}" \
         "${repo_dir}/flatpaks.list" \
