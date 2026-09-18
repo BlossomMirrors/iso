@@ -193,6 +193,13 @@ build-iso image="blossomos" tag="main" flavor="main" live="0" netinstall="1":
         titanoboa_just="${just_bin_dir}/just"
     fi
 
+    # Whichever just runs the nested build above is now >=1.57 (either already
+    # was, or we just fetched one), so which(), logical operators and list
+    # literals need `set lists` there too; Titanoboa's Justfile only sets
+    # `set unstable`, which stopped covering those in 1.57.
+    grep -q '^set lists' "${titanoboa_dir}/Justfile" \
+        || sed -i '/^set unstable/a set lists := true' "${titanoboa_dir}/Justfile"
+
     repo_dir="$(pwd)"
 
     # Stage a locally built anaconda-webui RPM into the titanoboa checkout, which is
