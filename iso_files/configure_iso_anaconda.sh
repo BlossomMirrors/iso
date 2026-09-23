@@ -32,6 +32,14 @@ if [[ -f /app/.blossomos-netinstall ]]; then
     NETINSTALL="$(cat /app/.blossomos-netinstall)"
 fi
 
+# Image signature verification (see iso_files/blossomos-verify-image), staged
+# by the Justfile. The key and verifier come with the ISO rather than the
+# image being installed, so a tampered image can't vouch for itself.
+install -Dm0755 /app/.blossomos-integrity/blossomos-verify-image /usr/libexec/anaconda/blossomos-verify-image
+install -Dm0644 /app/.blossomos-integrity/cosign.pub /usr/share/blossomos-installer/cosign.pub
+mkdir -p /usr/share/blossomos-installer/sigs
+cp -a /app/.blossomos-integrity/sigs/. /usr/share/blossomos-installer/sigs/
+
 systemctl disable rpm-ostree-countme.service || true
 systemctl disable tailscaled || true
 systemctl disable netbird || true
@@ -60,6 +68,9 @@ SPECS=(
     "firefox"
     "xkeyboard-config"
     "python3-xkbregistry"
+    # blossomos-verify-image
+    "openssl"
+    "skopeo"
 )
 if [[ "$LIVE_SESSION" == "1" ]]; then
     SPECS+=("anaconda-live")
@@ -484,6 +495,7 @@ sed -i \
     -e "s|__BLOSSOMOS_IMAGE_REF__|${final_image_ref}|" \
     -e "s|__BLOSSOMOS_TRANSPORT__|${final_transport}|" \
     /usr/share/anaconda/interactive-defaults.ks \
+    /usr/share/anaconda/post-scripts/verify-image.ks \
     /usr/share/anaconda/post-scripts/install-configure-upgrade.ks
 PREEOF
     chmod +x /usr/libexec/anaconda/blossomos-resolve-flavor
@@ -516,7 +528,8 @@ mount --bind /mnt/sysimage/.ostree-staging /var/tmp
 %end
 
 $OSTREE_DIRECTIVE
-bootloader --append="quiet splash"
+bootloader --append="quiet splash blossomos.integrity=1"
+%include /usr/share/anaconda/post-scripts/verify-image.ks
 %include /usr/share/anaconda/post-scripts/install-configure-upgrade.ks
 %include /usr/share/anaconda/post-scripts/disable-fedora-flatpak.ks
 %include /usr/share/anaconda/post-scripts/install-flatpaks.ks
@@ -524,21 +537,61 @@ bootloader --append="quiet splash"
 %include /usr/share/anaconda/post-scripts/secureboot-enroll-key.ks
 EOF
 
-if [[ "$NETINSTALL" == "1" ]]; then
-    # __BLOSSOMOS_IMAGE_REF__ and __BLOSSOMOS_TRANSPORT__ are resolved by
-    # blossomos-resolve-flavor.service before anaconda ever parses this file
+# ostreecontainer can't check cosign signatures (--no-signature-verification
+# above), so check the digest that actually got installed instead, and fail
+# the install if BlossomOS didn't sign it. blossomos.insecure_image=1 skips
+# this, for PXE setups serving an image without its signatures (see PXE.md).
+tee /usr/share/anaconda/post-scripts/verify-image.ks <<'EOF'
+%post --nochroot --erroronfail
+set -euo pipefail
+if grep -qw 'blossomos.insecure_image=1' /proc/cmdline; then
+    echo "blossomos.insecure_image=1 set, not verifying the installed image's signature"
+    exit 0
+fi
+repo=/mnt/sysimage/ostree/repo
+commit="$(ostree rev-parse --repo="$repo" ostree/0/1/0)"
+digest="$(ostree show --repo="$repo" --print-metadata-key=ostree.manifest-digest "$commit" | tr -d "'")"
+/usr/libexec/anaconda/blossomos-verify-image \
+    --key /usr/share/blossomos-installer/cosign.pub \
+    --sigdir /usr/share/blossomos-installer/sigs \
+    --image "__BLOSSOMOS_IMAGE_REF__" \
+    --digest "$digest"
+%end
+EOF
+
+# Track the image with signature enforcement from the start, as long as the
+# installed image ships the matching containers-policy.json (images from
+# before it did would otherwise be unable to update).
+tee /usr/share/anaconda/post-scripts/install-configure-upgrade.ks <<'EOF'
+%post --erroronfail
+sigpolicy=""
+image_repo="$(echo "__BLOSSOMOS_IMAGE_REF__" | sed -E 's/[:@][^/]*$//')"
+if [[ "__BLOSSOMOS_TRANSPORT__" == registry ]] \
+    && ! grep -qw 'blossomos.insecure_image=1' /proc/cmdline \
+    && grep -qF "\"${image_repo}\"" /etc/containers/policy.json 2>/dev/null; then
+    sigpolicy="--enforce-container-sigpolicy"
+fi
+bootc switch --mutate-in-place $sigpolicy --transport __BLOSSOMOS_TRANSPORT__ __BLOSSOMOS_IMAGE_REF__
+
+# Integrity mode is on by default (bootloader line above), but only where it
+# can hold: a signature-enforced origin, and an image that has the boot gate.
+# Anywhere else it'd refuse to boot the first update that brings the gate.
+if [[ -z "$sigpolicy" || ! -d /usr/lib/dracut/modules.d/98blossomos-integrity ]]; then
+    echo "Not enabling BlossomOS integrity mode for this install"
+    sed -i -E '/^options /s/ ?blossomos\.integrity=1//' /boot/loader/entries/*.conf 2>/dev/null || true
+fi
+%end
+EOF
+
+if [[ "$NETINSTALL" != "1" ]]; then
+    # Offline installs: the image is known at build time. Netinstall's
+    # placeholders are resolved by blossomos-resolve-flavor.service instead
     # (see the comment further up).
-    tee /usr/share/anaconda/post-scripts/install-configure-upgrade.ks <<'EOF'
-%post --erroronfail
-bootc switch --mutate-in-place --transport __BLOSSOMOS_TRANSPORT__ __BLOSSOMOS_IMAGE_REF__
-%end
-EOF
-else
-    tee /usr/share/anaconda/post-scripts/install-configure-upgrade.ks <<EOF
-%post --erroronfail
-bootc switch --mutate-in-place --transport registry $IMAGE_REF
-%end
-EOF
+    sed -i \
+        -e "s|__BLOSSOMOS_IMAGE_REF__|$IMAGE_REF|" \
+        -e "s|__BLOSSOMOS_TRANSPORT__|registry|" \
+        /usr/share/anaconda/post-scripts/verify-image.ks \
+        /usr/share/anaconda/post-scripts/install-configure-upgrade.ks
 fi
 
 tee /usr/share/anaconda/post-scripts/disable-fedora-flatpak.ks <<'EOF'

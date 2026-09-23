@@ -218,6 +218,33 @@ build-iso image="blossomos" tag="main" flavor="main" live="0" netinstall="1":
         cp "${webui_rpm}" "${titanoboa_dir}/"
     fi
 
+    # Image signature verification for the installer, staged through the same
+    # /app bind mount as the markers below: the verifier, BlossomOS' cosign
+    # key and, for offline ISOs, a verified copy of the embedded image's
+    # signatures, so the install can check what it installed without network.
+    # If the tag moves between here and Titanoboa pulling it, the saved copy
+    # won't match and the installer needs network to verify instead.
+    for cmd in skopeo jq openssl python3; do
+        if ! command -v "${cmd}" >/dev/null 2>&1; then
+            ${SUDOIF} dnf install -y "${cmd}"
+        fi
+    done
+    integrity_dir="${titanoboa_dir}/.blossomos-integrity"
+    rm -rf "${integrity_dir}"
+    mkdir -p "${integrity_dir}/sigs"
+    cp "${repo_dir}/iso_files/blossomos-verify-image" "${integrity_dir}/"
+    curl --retry 15 -fsSLo "${integrity_dir}/cosign.pub" \
+        "https://dev.blossomos.org/blossom/os/core/image/-/raw/release/cosign.pub"
+    if [[ "{{ netinstall }}" == "0" ]]; then
+        embedded_image="registry.blossomos.org/blossom/image:${image_tag}"
+        embedded_digest="$(skopeo inspect --no-tags --retry-times 3 "docker://${embedded_image}" | jq -r .Digest)"
+        python3 "${repo_dir}/iso_files/blossomos-verify-image" \
+            --key "${integrity_dir}/cosign.pub" \
+            --image "${embedded_image}" \
+            --digest "${embedded_digest}" \
+            --save-to "${integrity_dir}/sigs"
+    fi
+
     # Marker for the post-rootfs hook: env vars set here don't propagate into
     # the chroot the hook runs in, but this dir is bind-mounted at /app there
     # (same trick as the anaconda-webui RPM staging above).
