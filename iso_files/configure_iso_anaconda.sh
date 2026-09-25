@@ -2,17 +2,12 @@
 
 set -eoux pipefail
 
-# kernel-blossomos' vmlinuz is signed against this cert (see image repo's
-# build_files/base/02-install-common-kernel-akmods.sh), not ublue-os' akmods
-# key. A netinstall ISO's live rootfs is plain fedora-bootc and never has the
-# image's own /usr/share/blossomos/secureboot on it, so this is fetched the
-# same way generate-flatpak-list already pulls a static file straight out of
-# the image repo.
+# Release secure boot key to allow our custom kernel to boot
 sbkey='https://dev.blossomos.org/blossom/os/core/image/-/raw/release/secureboot.der'
 
 # The rootfs's own /usr/share/ublue-os/image-info.json can't tell us which
 # tag (stable/latest/beta/main, with or without an nvidia suffix) was
-# actually requested — the Justfile already knows, so it's passed straight
+# actually requested. The Justfile already knows, so it's passed straight
 # through instead of re-derived here. A previous version of this script
 # reconstructed it by guessing from image-info.json and always fell back to
 # "main", so e.g. requesting tag=latest still silently installed :main.
@@ -76,23 +71,19 @@ if [[ "$NETINSTALL" == "1" ]]; then
     # pulled in explicitly here. Redundant but harmless for netinstall=0,
     # since that path already has all of this via the real image.
     SPECS+=(
-        # anaconda.service's ExecStart is a tmux session (anaconda's text
-        # console mechanism).
+        # Anaconda dependency
         "tmux"
-        # Real ALSA hardware routing/mixer support for pipewire. pipewire
-        # and wireplumber themselves already come in transitively via
-        # gnome-kiosk, but without these, playback silently produces no
-        # sound on real hardware.
+        # Sound support
         "alsa-ucm" "alsa-utils" "alsa-sof-firmware" "pipewire-alsa"
-        # Bibata-Modern-Classic, set as the default cursor theme further
-        # down. Comes from the peterwu/rendezvous COPR enabled further below,
-        # before the actual "dnf install \"${SPECS[@]}\"" call runs.
+        # Default cursor theme
         "bibata-cursor-themes"
-        # Non-Latin script coverage, matching ../image's own font selection
-        # (core/image build_files/base/packages.dnf) plus Arabic.
+        # Non-Latin script coverage
         "google-noto-sans-cjk-fonts" "google-noto-sans-arabic-fonts"
         "google-noto-sans-balinese-fonts" "google-noto-sans-javanese-fonts"
         "google-noto-sans-sundanese-fonts" "google-noto-emoji-fonts"
+        # WiFi support
+        "NetworkManager-wifi" "wpa_supplicant" "iwd"
+        "iwlwifi-dvm-firmware" "iwlwifi-mvm-firmware" "iwlwifi-mld-firmware"
     )
 fi
 
@@ -119,11 +110,7 @@ dnf copr enable -y peterwu/rendezvous
 dnf install -y "${SPECS[@]}"
 
 if [[ "$NETINSTALL" == "1" ]]; then
-    # Aspekta and Lora (see ../image build_files/base/04-blossomos.sh) ship
-    # inside the blossomui RPM, which also pulls in the full KDE/Qt desktop
-    # style stack (kstyle5/6, icons, wallpapers) — nothing this minimal
-    # install environment has any use for. Download just the RPM and extract
-    # the font files directly instead of a full package install.
+    # Fonts for netinstall so the installer looks right
     rpm --import https://repo.blossomos.org/BLOSSOMOS-GPG-KEY.pub
     tee /etc/yum.repos.d/blossom.repo <<'EOF'
 [blossomos-main]
@@ -158,11 +145,7 @@ cursor-theme='Bibata-Modern-Classic'
 cursor-size=20
 EOF
 
-    # pipewire.service isn't actually the gatekeeper here — it's socket-
-    # activated, and pipewire.socket, pipewire-pulse.socket and
-    # pipewire-pulse.service all separately ship their own ConditionUser=!root
-    # too. Missing any one of them means pipewire never actually activates
-    # when this whole install environment runs as root, with no user account.
+    # Fix pipewire not working for root
     for unit in pipewire.service pipewire.socket pipewire-pulse.socket pipewire-pulse.service; do
         mkdir -p "/usr/lib/systemd/user/${unit}.d"
         tee "/usr/lib/systemd/user/${unit}.d/10-allow-root.conf" <<'EOF'
@@ -172,11 +155,7 @@ EOF
     done
     systemctl --global enable pipewire.socket pipewire-pulse.socket wireplumber.service
 
-    # WirePlumber's own default (device.routes.default-sink-volume, see
-    # /usr/share/wireplumber/wireplumber.conf) is 0.064 — barely audible.
-    # The WebUI's own install music already plays at full volume in-page, and
-    # there's no desktop with a volume dial/tray to fix this by hand, so give
-    # it a real, hardcoded default instead.
+    # Set default volume using Wireplumber
     mkdir -p /usr/share/wireplumber/wireplumber.conf.d
     tee /usr/share/wireplumber/wireplumber.conf.d/blossomos-default-volume.conf <<'EOF'
 wireplumber.settings = {
@@ -192,10 +171,7 @@ sed -i 's|DISPLAY=\$DISPLAY|DISPLAY="${DISPLAY:-}"|g' /usr/libexec/anaconda/webu
 sed -i '2a exec 2>>/tmp/webui-desktop-debug.log\nset -x' /usr/libexec/anaconda/webui-desktop
 
 if [[ "$LIVE_SESSION" == "0" ]]; then
-    # Upstream launches Firefox as a normal window (address bar, tabs, window
-    # controls) — on gnome-kiosk there's no desktop around it, so moving the
-    # mouse to the top just reveals a title bar the user can accidentally hit
-    # close on. --kiosk removes all of that for a true fullscreen installer.
+    # Fix Firefox controls being visible for Anaconda
     sed -i 's|--new-instance --profile|--new-instance --kiosk --profile|' /usr/libexec/anaconda/webui-desktop
 fi
 
@@ -204,10 +180,8 @@ rm /usr/share/applications/org.mozilla.firefox.desktop
 for theme in default live extlink; do
     theme_js="/usr/share/anaconda/firefox-theme/${theme}/user.js"
     if [[ -f "$theme_js" ]]; then
+        # Firefox policies (disable translation offer and right-click menu)
         echo 'user_pref("browser.translations.enable", false);' >> "$theme_js"
-        # Right-click's context menu offers reload/back/view-source/inspect —
-        # none of it useful in the installer, all of it a way to get stuck
-        # or navigate away from it.
         echo 'user_pref("dom.event.contextmenu.enabled", false);' >> "$theme_js"
     fi
 done
@@ -267,6 +241,7 @@ default_partitioning =
 
 [User Interface]
 webui_web_engine = firefox
+network_required = False
 hidden_spokes =
     PasswordSpoke
 hidden_webui_pages =
@@ -277,12 +252,12 @@ sed -i '/hidden_spokes =/a \    UserSpoke' /etc/anaconda/profile.d/blossomos.con
 sed -i '/hidden_webui_pages =/a \    anaconda-screen-accounts' /etc/anaconda/profile.d/blossomos.conf
 
 if [[ "$NETINSTALL" == "0" ]]; then
-    # The image is staged locally, so there's nothing to fetch and the
-    # network step is pointless. With NETINSTALL=1 (default) the install
-    # source is fetched over the network — keep the step so WiFi-only
-    # machines with no wired link have a way to get connected first.
+    # Do not ask for networking in offline install
     sed -i '/hidden_spokes =/a \    NetworkSpoke' /etc/anaconda/profile.d/blossomos.conf
     sed -i '/hidden_webui_pages =/a \    anaconda-screen-network' /etc/anaconda/profile.d/blossomos.conf
+else
+    # Require networking in netinstall
+    sed -i 's/^network_required = False$/network_required = True/' /etc/anaconda/profile.d/blossomos.conf
 fi
 
 . /etc/os-release
@@ -296,28 +271,6 @@ product_name = BlossomOS
 EOF
 
 if [[ "$LIVE_SESSION" == "0" && "$NETINSTALL" == "0" ]]; then
-    # Only applies to offline builds (netinstall=0): those still extract the
-    # full flavor-specific BlossomOS image as rootfs (see the Justfile), so
-    # Plasma needs stripping back out. netinstall=1 boots a minimal
-    # fedora-bootc rootfs with no KDE in it in the first place — running this
-    # against it would just print ~90 harmless "No packages to remove" lines.
-    #
-    # The installed system gets the full image fresh via ostreecontainer below,
-    # so Plasma in this live/install rootfs is dead weight — it's never booted
-    # into. `dnf5 group remove` can't drop it: this rootfs came from container
-    # layers rather than a real `group install` transaction, so dnf5 has no
-    # local record of any group being installed and always reports "No groups
-    # to remove", regardless of which group ID is given.
-    #
-    # This is the "kde-desktop" comps group's own member list (`dnf5 group
-    # info kde-desktop`), with two packages pulled back out because removing
-    # them breaks things we actually need: glibc-all-langpacks (removing it
-    # drags glibc itself into the transaction, which drags out the entire
-    # system) and udisks2 (anaconda-webui hard-requires cockpit-storaged,
-    # which requires udisks2). The --exclude list below is a second line of
-    # defense against the same kind of collision if the base image's package
-    # set drifts later — confirmed via `dnf5 remove ... --assumeno` that this
-    # exact list resolves cleanly and frees ~1 GiB without touching any of it.
     kde_packages=(
         kcm-plasmalogin plasma-desktop plasma-login-manager plasma-setup
         plasma-workspace plasma-workspace-wallpapers
@@ -353,12 +306,6 @@ if [[ "$LIVE_SESSION" == "0" && "$NETINSTALL" == "0" ]]; then
         || echo "WARNING: KDE package removal failed, ISO will be larger than expected" >&2
 fi
 
-# A non-live netinstall build has no /var/lib/flatpak to snapshot here at all
-# (rootfs-include-flatpaks is skipped in titanoboa for this case, see the
-# install-flatpaks.ks generation below) — pre-staging flatpaks into a squashfs
-# that only ever runs the installer would just re-inflate the ISO we're
-# trying to shrink, and netinstall already requires network at install time
-# anyway, so the target fetches them directly instead.
 if [[ "$LIVE_SESSION" == "1" || "$NETINSTALL" == "0" ]]; then
     flatpak remote-add --system --if-not-exists blossomos \
         https://forge.arcstore.net/flatpak.flatpakrepo
@@ -373,41 +320,12 @@ fi
 
 OSTREE_TRANSPORT="containers-storage"
 if [[ "$NETINSTALL" == "1" ]]; then
-    # No image staged into this rootfs's container storage (see the
-    # rootfs-include-container skip in titanoboa) — pull it over the network
-    # at install time instead, same as ostreecontainer would for any registry.
+    # Change transport type on netinstall
     OSTREE_TRANSPORT="registry"
 fi
 
-# netinstall=1 boots a flavor-independent minimal image (no GPU drivers
-# baked in), so the actual flavor to install is decided at install time by
-# probing the target machine's GPU instead of at build time. It also allows
-# overriding the image reference entirely via a blossomos.oci_url= kernel
-# arg (blossomos.oci_transport= for a non-default transport, e.g. when
-# PXE-booting against a locally hosted OCI registry instead of
-# registry.blossomos.org, see PXE.md) — GPU detection is skipped whenever
-# that override is present, since the caller is naming the exact image.
-#
-# This can NOT be done with a %pre/%pre-install section writing a file for
-# a later %include in the same kickstart, even though that's a commonly
-# documented pattern elsewhere: anaconda parses interactive-defaults.ks as
-# one upfront pass — %include is resolved textually as part of that parse,
-# entirely before any %pre/%pre-install section has actually run (confirmed
-# via anaconda.log: "Parsing kickstart" fails immediately with the %include
-# target missing, before any section-execution log line appears at all).
-#
-# Instead, resolve the image reference before anaconda ever touches the
-# kickstart file: a oneshot systemd service (Before=anaconda.target, same
-# ordering anaconda-core's own anaconda-pre.service uses) runs the GPU
-# detection / kernel arg check and sed-substitutes the real values into
-# plain static placeholders in both interactive-defaults.ks and
-# install-configure-upgrade.ks. Anaconda only ever sees already-resolved,
-# static kickstart text.
-#
-# The legacy table below is every Maxwell/Pascal/Volta NVIDIA device ID
-# (negativo17's proprietary "580" driver branch is the last to support
-# them; upstream open kernel modules only cover Turing and later),
-# hand-built from /usr/share/hwdata/pci.ids.
+# Automatic GPU detection
+# This code is hell, do not (!) break it
 OSTREE_DIRECTIVE="ostreecontainer --url=$IMAGE_REF --transport=$OSTREE_TRANSPORT --no-signature-verification"
 if [[ "$NETINSTALL" == "1" ]]; then
     OSTREE_DIRECTIVE="ostreecontainer --url=__BLOSSOMOS_IMAGE_REF__ --transport=__BLOSSOMOS_TRANSPORT__ --no-signature-verification"
@@ -525,9 +443,6 @@ bootloader --append="quiet splash"
 EOF
 
 if [[ "$NETINSTALL" == "1" ]]; then
-    # __BLOSSOMOS_IMAGE_REF__ and __BLOSSOMOS_TRANSPORT__ are resolved by
-    # blossomos-resolve-flavor.service before anaconda ever parses this file
-    # (see the comment further up).
     tee /usr/share/anaconda/post-scripts/install-configure-upgrade.ks <<'EOF'
 %post --erroronfail
 bootc switch --mutate-in-place --transport __BLOSSOMOS_TRANSPORT__ __BLOSSOMOS_IMAGE_REF__
