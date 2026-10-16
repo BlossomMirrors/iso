@@ -481,6 +481,48 @@ upload-r2 flavor="main":
 
     iso_name=$(jq -r '.name' "${isodata_file}")
 
+    if [[ -z "${COSIGN_PRIVATE_KEY:-}" ]]; then
+        echo "ERROR: COSIGN_PRIVATE_KEY is not set, refusing to publish unsigned ISO metadata"
+        exit 1
+    fi
+    if [[ ! $(command -v cosign) ]]; then
+        COSIGN_CONTAINER_ID=$(${SUDOIF} ${PODMAN} create cgr.dev/chainguard/cosign:latest bash)
+        ${SUDOIF} ${PODMAN} cp "${COSIGN_CONTAINER_ID}":/usr/bin/cosign /usr/local/bin/cosign
+        ${SUDOIF} ${PODMAN} rm -f "${COSIGN_CONTAINER_ID}"
+        if ! cosign verify --certificate-oidc-issuer=https://token.actions.githubusercontent.com --certificate-identity=https://github.com/chainguard-images/images/.github/workflows/release.yaml@refs/heads/main cgr.dev/chainguard/cosign >/dev/null; then
+            echo "ERROR: Failed to verify cosign image signatures."
+            exit 1
+        fi
+    fi
+    for cmd in openssl curl; do
+        if ! command -v "${cmd}" >/dev/null 2>&1; then
+            ${SUDOIF} dnf install -y "${cmd}"
+        fi
+    done
+    signing_dir=$(mktemp -d)
+    trap 'rm -rf "${signing_dir}"' EXIT
+    # GitLab file variables hold a path, plain ones the key itself
+    if [[ -f "${COSIGN_PRIVATE_KEY}" ]]; then
+        cp "${COSIGN_PRIVATE_KEY}" "${signing_dir}/cosign.key"
+    else
+        printf '%s\n' "${COSIGN_PRIVATE_KEY}" > "${signing_dir}/cosign.key"
+    fi
+    set +x
+    COSIGN_PASSWORD="${COSIGN_PASSWORD:-}" cosign sign-blob --yes \
+        --new-bundle-format=false --use-signing-config=false --tlog-upload=false \
+        --key "${signing_dir}/cosign.key" \
+        --output-signature "${isodata_file}.sig" \
+        "${isodata_file}"
+    set -x
+    curl --retry 15 -fsSLo "${signing_dir}/cosign.pub" \
+        "https://dev.blossomos.org/blossom/os/core/image/-/raw/release/cosign.pub"
+    base64 -d "${isodata_file}.sig" > "${signing_dir}/isodata.sig"
+    if ! openssl dgst -sha256 -verify "${signing_dir}/cosign.pub" \
+        -signature "${signing_dir}/isodata.sig" "${isodata_file}"; then
+        echo "ERROR: the isodata signature doesn't verify against the image's cosign.pub"
+        exit 1
+    fi
+
     export RCLONE_CONFIG_R2_TYPE=s3
     export RCLONE_CONFIG_R2_PROVIDER=Cloudflare
     export RCLONE_CONFIG_R2_ACCESS_KEY_ID="${R2_ACCESS_KEY_ID}"
@@ -490,9 +532,10 @@ upload-r2 flavor="main":
     export RCLONE_CONFIG_R2_NO_CHECK_BUCKET=true
 
     rclone copyto "output/${iso_name}" "r2:${R2_BUCKET}/iso/${iso_name}"
+    rclone copyto "${isodata_file}.sig" "r2:${R2_BUCKET}/iso/$(basename "${isodata_file}").sig"
     rclone copyto "${isodata_file}" "r2:${R2_BUCKET}/iso/$(basename "${isodata_file}")"
 
-    echo "Uploaded ${iso_name} and $(basename "${isodata_file}") to R2"
+    echo "Uploaded ${iso_name}, $(basename "${isodata_file}") and its signature to R2"
 
 # Generate Flatpak List from the BlossomOS image's packages.flatpak (Flathub-only; custom-remote packages excluded)
 [group('ISO')]
