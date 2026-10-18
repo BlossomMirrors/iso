@@ -155,37 +155,6 @@ build-iso image="blossomos" tag="main" flavor="main" live="0" netinstall="1":
         git clone --depth=1 https://dev.blossomos.org/blossom/os/titanoboa.git "${titanoboa_dir}"
     fi
 
-    sed -i 's/label=type:unconfined_t/label=disable/g' "${titanoboa_dir}/Justfile"
-    sed -i '/setfiles -F -r/s/$/ || true/' "${titanoboa_dir}/Justfile"
-    sed -i '/mv \.\/output\.iso .* &>\/dev\/null/s/$/ || true/' "${titanoboa_dir}/Justfile"
-    sed -i 's/ Live ISO//g' "${titanoboa_dir}/src/grub.cfg.tmpl"
-    sed -i 's/systemd-detect-virt -c || true/echo none/g' "${titanoboa_dir}/Justfile"
-
-    # Docker sets the iptables FORWARD policy to DROP, which also drops traffic
-    # from podman's bridge network, so the hooks can't resolve or reach anything.
-    # Host networking skips the bridge entirely.
-    grep -q -- '--network host' "${titanoboa_dir}/Justfile" \
-        || sed -i 's|^    --tmpfs /tmp:rw \\$|    --network host \\\n    --tmpfs /tmp:rw \\|' "${titanoboa_dir}/Justfile"
-
-    # The builder container gets a tmpfs /dev with the host device nodes bind mounted
-    # in one by one, so a loop device the kernel allocates mid build never appears
-    # inside it and both `mount` calls in the iso recipe fail. Replace them with
-    # xorriso extraction and mtools, neither of which needs a loop device.
-    sed -i \
-        -e 's|mount \$ISOROOT/\.\./efiboot\.img \$EFI_BOOT_MOUNT|xorriso -osirrox on -indev $ISOROOT/../efiboot.img -extract /boot/grub $EFI_BOOT_MOUNT/grub|' \
-        -e 's|cp -r \$EFI_BOOT_MOUNT/boot/grub \$ISOROOT/boot/|cp -r $EFI_BOOT_MOUNT/grub $ISOROOT/boot/|' \
-        -e '/umount \$EFI_BOOT_MOUNT/d' \
-        -e 's|mount \$WORKDIR/efiboot\.img \$EFI_BOOT_PART|mmd -i $WORKDIR/efiboot.img ::/EFI ::/EFI/BOOT|' \
-        -e 's|cp -dRvf \$ISOROOT/EFI/BOOT/\. \$EFI_BOOT_PART/EFI/BOOT|mcopy -s -i $WORKDIR/efiboot.img $ISOROOT/EFI/BOOT/* ::/EFI/BOOT/|' \
-        -e '/EFI_BOOT_PART=\$(mktemp -d)/d' \
-        -e '/mkdir -p \$EFI_BOOT_PART\/EFI\/BOOT/d' \
-        -e '/umount \$EFI_BOOT_PART/d' \
-        -e 's/xorriso shim dosfstools mtools/xorriso shim dosfstools/' \
-        -e 's/xorriso shim dosfstools/xorriso shim dosfstools mtools/' \
-        -e '/^        mtools$/d' \
-        -e 's/^        dosfstools$/        dosfstools\n        mtools/' \
-        "${titanoboa_dir}/Justfile"
-
     # Titanoboa's Justfile chains multiple comparisons with && (e.g.
     # `if a == "1" && b == "0" { ... }`), a grammar construct just's parser only
     # gained in 1.57; older just rejects it outright and no `set` directive works
@@ -198,13 +167,6 @@ build-iso image="blossomos" tag="main" flavor="main" live="0" netinstall="1":
         curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | bash -s -- --to "${just_bin_dir}"
         titanoboa_just="${just_bin_dir}/just"
     fi
-
-    # Whichever just runs the nested build above is now >=1.57 (either already
-    # was, or we just fetched one), so which(), logical operators and list
-    # literals need `set lists` there too; Titanoboa's Justfile only sets
-    # `set unstable`, which stopped covering those in 1.57.
-    grep -q '^set lists' "${titanoboa_dir}/Justfile" \
-        || sed -i '/^set unstable/a set lists := true' "${titanoboa_dir}/Justfile"
 
     repo_dir="$(pwd)"
 
