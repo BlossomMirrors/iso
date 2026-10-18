@@ -161,6 +161,12 @@ build-iso image="blossomos" tag="main" flavor="main" live="0" netinstall="1":
     sed -i 's/ Live ISO//g' "${titanoboa_dir}/src/grub.cfg.tmpl"
     sed -i 's/systemd-detect-virt -c || true/echo none/g' "${titanoboa_dir}/Justfile"
 
+    # Docker sets the iptables FORWARD policy to DROP, which also drops traffic
+    # from podman's bridge network, so the hooks can't resolve or reach anything.
+    # Host networking skips the bridge entirely.
+    grep -q -- '--network host' "${titanoboa_dir}/Justfile" \
+        || sed -i 's|^    --tmpfs /tmp:rw \\$|    --network host \\\n    --tmpfs /tmp:rw \\|' "${titanoboa_dir}/Justfile"
+
     # The builder container gets a tmpfs /dev with the host device nodes bind mounted
     # in one by one, so a loop device the kernel allocates mid build never appears
     # inside it and both `mount` calls in the iso recipe fail. Replace them with
