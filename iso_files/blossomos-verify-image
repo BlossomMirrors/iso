@@ -1,0 +1,213 @@
+#!/usr/bin/python3
+"""Verify the cosign signature of a BlossomOS image digest.
+
+Used by the installer, before and after installing an image, and by the ISO
+build to check (and save offline copies of) the signature of the image an
+offline ISO embeds. This is a copy of verify_image() and its helpers from the
+image repository's /usr/bin/blossomos-integrity; keep the two in sync.
+
+Exit status: 0 verified, 1 no valid signature, 2 error.
+"""
+
+import argparse
+import base64
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+
+LEGACY_SIG_ANNOTATION = "dev.cosignproject.cosign/signature"
+LEGACY_SIG_TYPE = "cosign container image signature"
+BUNDLE_MEDIA_TYPE = "application/vnd.dev.sigstore.bundle.v0.3+json"
+BUNDLE_PREDICATE_TYPE = "https://sigstore.dev/cosign/sign/v1"
+SIGNED_REPOS = (
+    "registry.blossomos.org/blossom/image",
+    "registry.blossomos.org/blossom/image-dev",
+)
+
+
+def signed_repos():
+    return list(SIGNED_REPOS)
+
+
+def split_image(ref):
+    """'host/repo:tag' or 'host/repo@sha256:..' -> ('host/repo', 'tag'/'digest')."""
+    if "@" in ref:
+        repo, _, rest = ref.partition("@")
+        return repo, rest
+    last = ref.rsplit("/", 1)
+    if ":" in last[-1]:
+        repo, _, tag = ref.rpartition(":")
+        return repo, tag
+    return ref, "latest"
+
+
+def _openssl_verify(key, data, sig):
+    with tempfile.TemporaryDirectory() as tmp:
+        data_path = os.path.join(tmp, "data")
+        sig_path = os.path.join(tmp, "sig")
+        with open(data_path, "wb") as f:
+            f.write(data)
+        with open(sig_path, "wb") as f:
+            f.write(sig)
+        r = subprocess.run(
+            ["openssl", "dgst", "-sha256", "-verify", key, "-signature", sig_path, data_path],
+            capture_output=True,
+        )
+        return r.returncode == 0
+
+
+def _skopeo_copy_dir(src, dest):
+    r = subprocess.run(
+        ["skopeo", "copy", "--quiet", "--retry-times", "3", src, f"dir:{dest}"],
+        capture_output=True,
+        text=True,
+    )
+    return r.returncode == 0
+
+
+def _skopeo_raw(src):
+    r = subprocess.run(
+        ["skopeo", "inspect", "--raw", "--retry-times", "3", src], capture_output=True, text=True
+    )
+    if r.returncode != 0:
+        return None
+    return json.loads(r.stdout)
+
+
+def _blob(sigdir, digest):
+    with open(os.path.join(sigdir, digest.split(":", 1)[1]), "rb") as f:
+        return f.read()
+
+
+def _identity_repo(reference):
+    return split_image(reference)[0] if reference else ""
+
+
+def _check_legacy(key, sigdir, digest, identities):
+    """Classic cosign signatures: sha256-<hex>.sig, one simple-signing payload per layer."""
+    with open(os.path.join(sigdir, "manifest.json")) as f:
+        manifest = json.load(f)
+    for layer in manifest.get("layers", []):
+        sig_b64 = layer.get("annotations", {}).get(LEGACY_SIG_ANNOTATION)
+        if not sig_b64:
+            continue
+        payload = _blob(sigdir, layer["digest"])
+        if not _openssl_verify(key, payload, base64.b64decode(sig_b64)):
+            continue
+        critical = json.loads(payload).get("critical", {})
+        if critical.get("type") != LEGACY_SIG_TYPE:
+            continue
+        if critical.get("image", {}).get("docker-manifest-digest") != digest:
+            continue
+        if _identity_repo(critical.get("identity", {}).get("docker-reference")) not in identities:
+            continue
+        return True
+    return False
+
+
+def _check_bundle(key, sigdir, digest):
+    """cosign 3 bundles: DSSE envelope over an in-toto statement naming the digest."""
+    with open(os.path.join(sigdir, "manifest.json")) as f:
+        manifest = json.load(f)
+    alg, _, hexdigest = digest.partition(":")
+    for layer in manifest.get("layers", []):
+        if layer.get("mediaType") != BUNDLE_MEDIA_TYPE:
+            continue
+        envelope = json.loads(_blob(sigdir, layer["digest"])).get("dsseEnvelope")
+        if not envelope:
+            continue
+        payload_type = envelope["payloadType"].encode()
+        payload = base64.b64decode(envelope["payload"])
+        pae = b"DSSEv1 %d %s %d %s" % (len(payload_type), payload_type, len(payload), payload)
+        if not any(_openssl_verify(key, pae, base64.b64decode(s["sig"])) for s in envelope["signatures"]):
+            continue
+        statement = json.loads(payload)
+        if statement.get("predicateType") != BUNDLE_PREDICATE_TYPE:
+            continue
+        if any(s.get("digest", {}).get(alg) == hexdigest for s in statement.get("subject", [])):
+            return True
+    return False
+
+
+def verify_image(repo, digest, key, identities=None, formats=("legacy", "bundle"),
+                 sigdir=None, save_to=None):
+    """Return the list of signature formats that verified for repo@digest.
+
+    Signatures are looked up in sigdir/<hex>/ first (offline copies saved with
+    save_to), then fetched from repo. identities are the repositories a legacy
+    signature's payload may name; mirrors can serve BlossomOS signatures as
+    long as the payload still names a BlossomOS repository.
+    """
+    if identities is None:
+        identities = signed_repos()
+    alg, _, hexdigest = digest.partition(":")
+    if alg != "sha256" or not re.fullmatch(r"[0-9a-f]{64}", hexdigest):
+        raise ValueError(f"not a sha256 digest: {digest}")
+    verified = []
+    with tempfile.TemporaryDirectory() as tmp:
+        candidates = []  # (format, dir)
+        offline = os.path.join(sigdir, hexdigest) if sigdir else None
+        if offline and os.path.isdir(offline):
+            for name in sorted(os.listdir(offline)):
+                fmt = "legacy" if name == "legacy" else "bundle"
+                candidates.append((fmt, os.path.join(offline, name)))
+        else:
+            if "legacy" in formats:
+                d = os.path.join(tmp, "legacy")
+                if _skopeo_copy_dir(f"docker://{repo}:{alg}-{hexdigest}.sig", d):
+                    candidates.append(("legacy", d))
+            if "bundle" in formats:
+                # OCI 1.1 referrers tag schema fallback, which is how cosign 3
+                # stores bundles on registries without the referrers API.
+                index = _skopeo_raw(f"docker://{repo}:{alg}-{hexdigest}") or {}
+                for i, m in enumerate(index.get("manifests", [])):
+                    if m.get("artifactType") != BUNDLE_MEDIA_TYPE:
+                        continue
+                    d = os.path.join(tmp, f"bundle-{i}")
+                    if _skopeo_copy_dir(f"docker://{repo}@{m['digest']}", d):
+                        candidates.append(("bundle", d))
+        for fmt, d in candidates:
+            if fmt not in formats or fmt in verified:
+                continue
+            ok = (_check_legacy(key, d, digest, identities) if fmt == "legacy"
+                  else _check_bundle(key, d, digest))
+            if ok:
+                verified.append(fmt)
+                if save_to:
+                    dest = os.path.join(save_to, hexdigest, os.path.basename(d))
+                    shutil.rmtree(dest, ignore_errors=True)
+                    shutil.copytree(d, dest)
+    return verified
+
+
+def main():
+    p = argparse.ArgumentParser(prog="blossomos-verify-image")
+    p.add_argument("--key", required=True)
+    p.add_argument("--image", required=True,
+                   help="repository (or image reference) to fetch signatures from")
+    p.add_argument("--digest", required=True)
+    p.add_argument("--format", action="append", choices=("legacy", "bundle"))
+    p.add_argument("--sigdir", help="look for offline signature copies here first")
+    p.add_argument("--save-to", help="save verified signatures here for offline use")
+    args = p.parse_args()
+    repo = split_image(args.image)[0]
+    formats = tuple(args.format) if args.format else ("legacy", "bundle")
+    try:
+        ok = verify_image(repo, args.digest, key=args.key, formats=formats,
+                          sigdir=args.sigdir, save_to=args.save_to)
+    except Exception as e:
+        print(f"blossomos-verify-image: {e}", file=sys.stderr)
+        sys.exit(2)
+    if not ok:
+        print(f"blossomos-verify-image: no valid BlossomOS signature for {repo}@{args.digest}",
+              file=sys.stderr)
+        sys.exit(1)
+    print(f"{repo}@{args.digest}: signature verified ({', '.join(ok)})")
+
+
+if __name__ == "__main__":
+    main()

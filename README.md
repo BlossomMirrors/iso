@@ -134,6 +134,10 @@ The custom BlossomOS profile includes:
 
 Secure boot is supported by default. After installation, users are prompted to enroll the secure boot key with password: `blossomos`
 
+### Image Signatures
+
+The installer verifies the cosign signature of the image digest it installed (with `iso_files/blossomos-verify-image` and the image repo's `cosign.pub`) and aborts the install if it isn't signed. Offline ISOs carry a verified copy of the embedded image's signatures, checked at build time. The installed system then tracks the image with signature enforcement and has integrity mode (`blossomos.integrity=1`: measured boot, boot gate, locked package layering) on by default, unless the installed image predates it or the install used `blossomos.insecure_image=1`. See the image repo's `INTEGRITY.md`, and [PXE.md](PXE.md#signatures) for mirrors and unsigned builds.
+
 ### Custom OCI Image Source (netinstall)
 
 Netinstall ISOs fetch the OS image to install from `registry.blossomos.org`
