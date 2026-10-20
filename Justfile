@@ -186,6 +186,33 @@ build-iso image="blossomos" tag="main" flavor="main" live="0" netinstall="1":
         cp "${webui_rpm}" "${titanoboa_dir}/"
     fi
 
+    # Image signature verification for the installer, staged through the same
+    # /app bind mount as the markers below: the verifier, BlossomOS' cosign
+    # key and, for offline ISOs, a verified copy of the embedded image's
+    # signatures, so the install can check what it installed without network.
+    # If the tag moves between here and Titanoboa pulling it, the saved copy
+    # won't match and the installer needs network to verify instead.
+    for cmd in skopeo jq openssl python3; do
+        if ! command -v "${cmd}" >/dev/null 2>&1; then
+            ${SUDOIF} dnf install -y "${cmd}"
+        fi
+    done
+    integrity_dir="${titanoboa_dir}/.blossomos-integrity"
+    rm -rf "${integrity_dir}"
+    mkdir -p "${integrity_dir}/sigs"
+    cp "${repo_dir}/iso_files/blossomos-verify-image" "${integrity_dir}/"
+    curl --retry 15 -fsSLo "${integrity_dir}/cosign.pub" \
+        "https://dev.blossomos.org/blossom/os/core/image/-/raw/release/cosign.pub"
+    if [[ "{{ netinstall }}" == "0" ]]; then
+        embedded_image="registry.blossomos.org/blossom/image:${image_tag}"
+        embedded_digest="$(skopeo inspect --no-tags --retry-times 3 "docker://${embedded_image}" | jq -r .Digest)"
+        python3 "${repo_dir}/iso_files/blossomos-verify-image" \
+            --key "${integrity_dir}/cosign.pub" \
+            --image "${embedded_image}" \
+            --digest "${embedded_digest}" \
+            --save-to "${integrity_dir}/sigs"
+    fi
+
     # Marker for the post-rootfs hook: env vars set here don't propagate into
     # the chroot the hook runs in, but this dir is bind-mounted at /app there
     # (same trick as the anaconda-webui RPM staging above).
@@ -422,6 +449,48 @@ upload-r2 flavor="main":
 
     iso_name=$(jq -r '.name' "${isodata_file}")
 
+    if [[ -z "${COSIGN_PRIVATE_KEY:-}" ]]; then
+        echo "ERROR: COSIGN_PRIVATE_KEY is not set, refusing to publish unsigned ISO metadata"
+        exit 1
+    fi
+    if [[ ! $(command -v cosign) ]]; then
+        COSIGN_CONTAINER_ID=$(${SUDOIF} ${PODMAN} create cgr.dev/chainguard/cosign:latest bash)
+        ${SUDOIF} ${PODMAN} cp "${COSIGN_CONTAINER_ID}":/usr/bin/cosign /usr/local/bin/cosign
+        ${SUDOIF} ${PODMAN} rm -f "${COSIGN_CONTAINER_ID}"
+        if ! cosign verify --certificate-oidc-issuer=https://token.actions.githubusercontent.com --certificate-identity=https://github.com/chainguard-images/images/.github/workflows/release.yaml@refs/heads/main cgr.dev/chainguard/cosign >/dev/null; then
+            echo "ERROR: Failed to verify cosign image signatures."
+            exit 1
+        fi
+    fi
+    for cmd in openssl curl; do
+        if ! command -v "${cmd}" >/dev/null 2>&1; then
+            ${SUDOIF} dnf install -y "${cmd}"
+        fi
+    done
+    signing_dir=$(mktemp -d)
+    trap 'rm -rf "${signing_dir}"' EXIT
+    # GitLab file variables hold a path, plain ones the key itself
+    if [[ -f "${COSIGN_PRIVATE_KEY}" ]]; then
+        cp "${COSIGN_PRIVATE_KEY}" "${signing_dir}/cosign.key"
+    else
+        printf '%s\n' "${COSIGN_PRIVATE_KEY}" > "${signing_dir}/cosign.key"
+    fi
+    set +x
+    COSIGN_PASSWORD="${COSIGN_PASSWORD:-}" cosign sign-blob --yes \
+        --new-bundle-format=false --use-signing-config=false --tlog-upload=false \
+        --key "${signing_dir}/cosign.key" \
+        --output-signature "${isodata_file}.sig" \
+        "${isodata_file}"
+    set -x
+    curl --retry 15 -fsSLo "${signing_dir}/cosign.pub" \
+        "https://dev.blossomos.org/blossom/os/core/image/-/raw/release/cosign.pub"
+    base64 -d "${isodata_file}.sig" > "${signing_dir}/isodata.sig"
+    if ! openssl dgst -sha256 -verify "${signing_dir}/cosign.pub" \
+        -signature "${signing_dir}/isodata.sig" "${isodata_file}"; then
+        echo "ERROR: the isodata signature doesn't verify against the image's cosign.pub"
+        exit 1
+    fi
+
     export RCLONE_CONFIG_R2_TYPE=s3
     export RCLONE_CONFIG_R2_PROVIDER=Cloudflare
     export RCLONE_CONFIG_R2_ACCESS_KEY_ID="${R2_ACCESS_KEY_ID}"
@@ -431,9 +500,10 @@ upload-r2 flavor="main":
     export RCLONE_CONFIG_R2_NO_CHECK_BUCKET=true
 
     rclone copyto "output/${iso_name}" "r2:${R2_BUCKET}/iso/${iso_name}"
+    rclone copyto "${isodata_file}.sig" "r2:${R2_BUCKET}/iso/$(basename "${isodata_file}").sig"
     rclone copyto "${isodata_file}" "r2:${R2_BUCKET}/iso/$(basename "${isodata_file}")"
 
-    echo "Uploaded ${iso_name} and $(basename "${isodata_file}") to R2"
+    echo "Uploaded ${iso_name}, $(basename "${isodata_file}") and its signature to R2"
 
 # Generate Flatpak List from the BlossomOS image's packages.flatpak (Flathub-only; custom-remote packages excluded)
 [group('ISO')]

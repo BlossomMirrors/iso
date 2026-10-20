@@ -155,6 +155,26 @@ reading `/proc/cmdline` and rewriting the install kickstart's
 `ostreecontainer` directive accordingly. See the comments around
 `OSTREE_DIRECTIVE` in `iso_files/configure_iso_anaconda.sh`.
 
+### Signatures
+
+The installer verifies the cosign signature of the image it installed and
+aborts the install if BlossomOS didn't sign that exact digest. A mirror works
+as long as it serves the signatures next to the image, i.e. it copied the
+`sha256-<digest>.sig` tag (or the `sha256-<digest>` referrers tag) along with
+the image, for example with `skopeo sync --all` or `cosign copy`.
+
+For a custom or development build that BlossomOS didn't sign, or any
+non-`registry` transport, also pass:
+
+```
+blossomos.insecure_image=1
+```
+
+That skips the check and leaves the installed system tracking the image
+without signature enforcement, and with integrity mode off (it would refuse
+to boot an unverified image). `blossomos-integrity check` on the installed
+system will report it as not trusted.
+
 ## Secure Boot
 
 If the target machine has Secure Boot enabled, `ipxe.efi` itself needs to be
