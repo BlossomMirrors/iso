@@ -76,6 +76,9 @@ if [[ "$NETINSTALL" == "1" ]]; then
         "google-noto-sans-cjk-fonts" "google-noto-sans-arabic-fonts"
         "google-noto-sans-balinese-fonts" "google-noto-sans-javanese-fonts"
         "google-noto-sans-sundanese-fonts" "google-noto-emoji-fonts"
+        # WiFi support
+        "NetworkManager-wifi" "wpa_supplicant" "iwd"
+        "iwlwifi-dvm-firmware" "iwlwifi-mvm-firmware" "iwlwifi-mld-firmware"
     )
 fi
 
@@ -164,6 +167,7 @@ rm /usr/share/applications/org.mozilla.firefox.desktop
 for theme in default live extlink; do
     theme_js="/usr/share/anaconda/firefox-theme/${theme}/user.js"
     if [[ -f "$theme_js" ]]; then
+        # Firefox policies (disable translation offer and right-click menu)
         echo 'user_pref("browser.translations.enable", false);' >> "$theme_js"
         echo 'user_pref("dom.event.contextmenu.enabled", false);' >> "$theme_js"
     fi
@@ -224,6 +228,7 @@ default_partitioning =
 
 [User Interface]
 webui_web_engine = firefox
+network_required = False
 hidden_spokes =
     PasswordSpoke
 hidden_webui_pages =
@@ -236,6 +241,9 @@ sed -i '/hidden_webui_pages =/a \    anaconda-screen-accounts' /etc/anaconda/pro
 if [[ "$NETINSTALL" == "0" ]]; then
     sed -i '/hidden_spokes =/a \    NetworkSpoke' /etc/anaconda/profile.d/blossomos.conf
     sed -i '/hidden_webui_pages =/a \    anaconda-screen-network' /etc/anaconda/profile.d/blossomos.conf
+else
+    # Require networking in netinstall
+    sed -i 's/^network_required = False$/network_required = True/' /etc/anaconda/profile.d/blossomos.conf
 fi
 
 . /etc/os-release
