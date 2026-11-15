@@ -146,7 +146,7 @@ build-iso image="blossomos" tag="main" flavor="main" live="0" netinstall="1":
     # flavor-specific BlossomOS image as its rootfs either.
     rootfs_image="${image_repo}:${image_tag}"
     if [[ "{{ netinstall }}" == "1" ]]; then
-        rootfs_image="quay.io/fedora/fedora-bootc:44"
+        rootfs_image="quay.io/fedora/fedora-bootc:45"
     fi
 
     ${SUDOIF} rm -rf output
