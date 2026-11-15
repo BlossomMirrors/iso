@@ -12,6 +12,7 @@ tags := '(
     [latest]=latest
     [beta]=beta
     [main]=main
+    [prerelease]=prerelease
 )'
 export SUDOIF := if `id -u` == "0" { "" } else { "sudo" }
 export PODMAN := if path_exists("/usr/bin/podman") == "true" { env("PODMAN", "/usr/bin/podman") } else if path_exists("/usr/bin/docker") == "true" { env("PODMAN", "docker") } else { env("PODMAN", "exit 1 ; ") }
@@ -133,10 +134,17 @@ build-iso image="blossomos" tag="main" flavor="main" live="0" netinstall="1":
         iso_name="BlossomOS-${name_suffix}-$(date +%Y.%m.%d)-x86_64.iso"
     fi
 
+    # latest tags are published to the separate image-dev repository (see the
+    # image repo's README); every other tag lives in blossom/image.
+    image_repo="registry.blossomos.org/blossom/image"
+    if [[ "{{ tag }}" == "latest" ]]; then
+        image_repo="registry.blossomos.org/blossom/image-dev"
+    fi
+
     # netinstall=1 boots a minimal generic base to render the installer —
     # it never needs GPU-specific drivers, so it doesn't need the full
     # flavor-specific BlossomOS image as its rootfs either.
-    rootfs_image="registry.blossomos.org/blossom/image:${image_tag}"
+    rootfs_image="${image_repo}:${image_tag}"
     if [[ "{{ netinstall }}" == "1" ]]; then
         rootfs_image="quay.io/fedora/fedora-bootc:44"
     fi
@@ -221,10 +229,11 @@ build-iso image="blossomos" tag="main" flavor="main" live="0" netinstall="1":
     # Marker for the post-rootfs hook: env vars set here don't propagate into
     # the chroot the hook runs in, but this dir is bind-mounted at /app there
     # (same trick as the anaconda-webui RPM staging above).
-    rm -f "${titanoboa_dir}/.blossomos-live" "${titanoboa_dir}/.blossomos-netinstall" "${titanoboa_dir}/.blossomos-image-tag"
+    rm -f "${titanoboa_dir}/.blossomos-live" "${titanoboa_dir}/.blossomos-netinstall" "${titanoboa_dir}/.blossomos-image-tag" "${titanoboa_dir}/.blossomos-image-repo"
     echo "{{ live }}" > "${titanoboa_dir}/.blossomos-live"
     echo "{{ netinstall }}" > "${titanoboa_dir}/.blossomos-netinstall"
     echo "${image_tag}" > "${titanoboa_dir}/.blossomos-image-tag"
+    echo "${image_repo}" > "${titanoboa_dir}/.blossomos-image-repo"
 
     extra_kargs="NONE"
     if [[ "{{ live }}" == "0" ]]; then
@@ -242,7 +251,7 @@ build-iso image="blossomos" tag="main" flavor="main" live="0" netinstall="1":
         "${repo_dir}/flatpaks.list" \
         "squashfs" \
         "${extra_kargs}" \
-        "registry.blossomos.org/blossom/image:${image_tag}" \
+        "${image_repo}:${image_tag}" \
         "1" \
         "{{ netinstall }}"
 

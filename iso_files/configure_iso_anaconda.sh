@@ -15,7 +15,12 @@ IMAGE_TAG="main"
 if [[ -f /app/.blossomos-image-tag ]]; then
     IMAGE_TAG="$(cat /app/.blossomos-image-tag)"
 fi
-IMAGE_REF="registry.blossomos.org/blossom/image:${IMAGE_TAG}"
+# latest tags live in blossom/image-dev; the Justfile picks the repository.
+IMAGE_REPO="registry.blossomos.org/blossom/image"
+if [[ -f /app/.blossomos-image-repo ]]; then
+    IMAGE_REPO="$(cat /app/.blossomos-image-repo)"
+fi
+IMAGE_REF="${IMAGE_REPO}:${IMAGE_TAG}"
 
 LIVE_SESSION=1
 if [[ -f /app/.blossomos-live ]]; then
@@ -405,7 +410,7 @@ sed -i \
     /usr/share/anaconda/post-scripts/install-configure-upgrade.ks
 PREEOF
     chmod +x /usr/libexec/anaconda/blossomos-resolve-flavor
-    sed -i "s|__BASE_IMAGE_REF__|registry.blossomos.org/blossom/image:$IMAGE_TAG|" /usr/libexec/anaconda/blossomos-resolve-flavor
+    sed -i "s|__BASE_IMAGE_REF__|$IMAGE_REF|" /usr/libexec/anaconda/blossomos-resolve-flavor
 
     tee /usr/lib/systemd/system/blossomos-resolve-flavor.service <<'EOF'
 [Unit]
