@@ -219,6 +219,14 @@ NoDisplay=true
 EOF
 fi
 
+# Broadcom (brcmfmac) WiFi, e.g. the BCM4364 in T2 MacBooks: association
+# hangs at "Connecting..." when the firmware's own supplicant (FWSUP, bit 13)
+# and SAE/WPA3 offload (bit 19) are used. Let wpa_supplicant handle the
+# handshake instead. Only affects brcmfmac, so it's harmless elsewhere.
+tee /etc/modprobe.d/blossomos-brcmfmac.conf <<'EOF'
+options brcmfmac feature_disable=0x82000
+EOF
+
 echo "blossomos" | tee /etc/hostname
 
 tee /etc/anaconda/profile.d/blossomos.conf <<'EOF'
