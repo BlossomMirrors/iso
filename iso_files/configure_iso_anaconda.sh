@@ -70,19 +70,12 @@ else
 fi
 
 if [[ "$NETINSTALL" == "1" ]]; then
-    # This rootfs is the minimal fedora-bootc base rather than the full
-    # BlossomOS/Kinoite image, so packages the full image ships by default
-    # (and that anaconda / our own overrides below assume exist) need to be
-    # pulled in explicitly here. Redundant but harmless for netinstall=0,
-    # since that path already has all of this via the real image.
     SPECS+=(
-        # Anaconda dependency
         "tmux"
-        # Sound support
         "alsa-ucm" "alsa-utils" "alsa-sof-firmware" "pipewire-alsa"
-        # Default cursor theme
+        "iwlwifi-mvm-firmware" "iwlwifi-mld-firmware" "iwlwifi-dvm-firmware"
+        "iwlegacy-firmware" "libertas-firmware"
         "bibata-cursor-themes"
-        # Non-Latin script coverage
         "google-noto-sans-cjk-fonts" "google-noto-sans-arabic-fonts"
         "google-noto-sans-balinese-fonts" "google-noto-sans-javanese-fonts"
         "google-noto-sans-sundanese-fonts" "google-noto-emoji-fonts"
