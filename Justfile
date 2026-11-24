@@ -237,7 +237,7 @@ build-iso image="blossomos" tag="main" flavor="main" live="0" netinstall="1":
 
     extra_kargs="NONE"
     if [[ "{{ live }}" == "0" ]]; then
-        extra_kargs="systemd.unit=anaconda.target"
+        extra_kargs="systemd.unit=anaconda.target,vt.global_cursor_default=0,loglevel=3,rd.udev.log_level=3,systemd.show_status=false,rd.systemd.show_status=false"
     fi
 
     pushd "${titanoboa_dir}"
@@ -426,7 +426,7 @@ extract-pxe iso="" outdir="output/pxe":
     # (see PXE.md). root=live:CDLABEL=blossomos then resolves against the
     # just-hooked virtual CD, same as a physical install.
     sanhook --no-describe http://${next-server}/__ISO_NAME__ || goto failed
-    kernel http://${next-server}/vmlinuz initrd=initramfs.img root=live:CDLABEL=blossomos enforcing=0 rd.live.image systemd.unit=anaconda.target quiet rhgb || goto failed
+    kernel http://${next-server}/vmlinuz initrd=initramfs.img root=live:CDLABEL=blossomos enforcing=0 rd.live.image systemd.unit=anaconda.target vt.global_cursor_default=0 loglevel=3 rd.udev.log_level=3 systemd.show_status=false rd.systemd.show_status=false quiet rhgb || goto failed
     initrd http://${next-server}/initramfs.img || goto failed
     boot || goto failed
     :failed

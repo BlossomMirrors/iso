@@ -141,6 +141,15 @@ if [[ "$LIVE_SESSION" == "0" ]]; then
 [org.gnome.desktop.interface]
 cursor-theme='Bibata-Modern-Classic'
 cursor-size=20
+
+# gnome-kiosk draws this behind Firefox until the installer UI appears
+[org.gnome.desktop.background]
+picture-uri=''
+picture-uri-dark=''
+picture-options='none'
+color-shading-type='solid'
+primary-color='#000000'
+secondary-color='#000000'
 EOF
 
     # Fix pipewire not working for root
@@ -152,6 +161,32 @@ ConditionUser=
 EOF
     done
     systemctl --global enable pipewire.socket pipewire-pulse.socket wireplumber.service
+
+    # Don't show anaconda's tmux console on tty1 while the GUI starts; boot
+    # with blossomos.tmux to get it back for debugging. Anaconda itself still
+    # runs inside the detached tmux session (anaconda.service).
+    mkdir -p /usr/lib/systemd/system/anaconda-tmux@.service.d
+    tee /usr/lib/systemd/system/anaconda-tmux@.service.d/10-blossomos-hide.conf <<'EOF'
+[Unit]
+ConditionKernelCommandLine=blossomos.tmux
+EOF
+
+    # Plymouth quits before gnome-kiosk is up; keep tty1 black meanwhile
+    tee /usr/lib/systemd/system/blossomos-blank-console.service <<'EOF'
+[Unit]
+Description=Blank the console until the installer appears
+After=plymouth-quit.service plymouth-quit-wait.service
+ConditionKernelCommandLine=!blossomos.tmux
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/printf '\033[2J\033[H\033[?25l'
+StandardOutput=tty
+TTYPath=/dev/tty1
+EOF
+    mkdir -p /usr/lib/systemd/system/anaconda.target.wants
+    ln -sf ../blossomos-blank-console.service \
+        /usr/lib/systemd/system/anaconda.target.wants/blossomos-blank-console.service
 
     # Set default volume using Wireplumber
     mkdir -p /usr/share/wireplumber/wireplumber.conf.d
@@ -181,6 +216,11 @@ for theme in default live extlink; do
         # Firefox policies (disable translation offer and right-click menu)
         echo 'user_pref("browser.translations.enable", false);' >> "$theme_js"
         echo 'user_pref("dom.event.contextmenu.enabled", false);' >> "$theme_js"
+    fi
+    theme_css="/usr/share/anaconda/firefox-theme/${theme}/chrome/userChrome.css"
+    if [[ -f "$theme_css" ]]; then
+        # Black instead of gray while the installer page is still loading
+        echo '#browser, #tabbrowser-tabpanels, .browserStack { background-color: #000 !important; }' >> "$theme_css"
     fi
 done
 
